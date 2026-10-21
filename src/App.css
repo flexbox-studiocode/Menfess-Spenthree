@@ -1,10 +1,5 @@
-:global(:root) {
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #19212e;
   background: #f8f9fb;
   font-synthesis: none;
@@ -17,25 +12,31 @@
   --accent-soft: #e9efff;
   --radius: 0.6rem;
 }
-:global(*) {
+
+* {
   box-sizing: border-box;
 }
-:global(body) {
+
+body {
   margin: 0;
 }
-:global(a) {
+
+a {
   color: var(--accent);
 }
-:global(a:focus-visible),
-:global(button:focus-visible) {
+
+a:focus-visible,
+button:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 4px;
 }
-:global(p),
-:global(li) {
+
+p,
+li {
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
-:global(li) {
+
+li {
   margin: 0.5rem 0;
 }
