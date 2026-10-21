@@ -1,0 +1,41 @@
+:global(:root) {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: #19212e;
+  background: #f8f9fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #19212e;
+  --muted: #526174;
+  --surface: #fff;
+  --border: #d7dfe9;
+  --accent: #2949a2;
+  --accent-soft: #e9efff;
+  --radius: 0.6rem;
+}
+:global(*) {
+  box-sizing: border-box;
+}
+:global(body) {
+  margin: 0;
+}
+:global(a) {
+  color: var(--accent);
+}
+:global(a:focus-visible),
+:global(button:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+:global(p),
+:global(li) {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+:global(li) {
+  margin: 0.5rem 0;
+}

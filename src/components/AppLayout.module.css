@@ -1,0 +1,64 @@
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  padding: 1rem max(1rem, calc((100% - 72rem) / 2));
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--surface);
+}
+.logo {
+  font-weight: 800;
+  color: var(--ink);
+  text-decoration: none;
+}
+.header nav {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.link:hover,
+.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.main {
+  width: min(72rem, 100% - 2rem);
+  margin: 0 auto;
+  flex: 1;
+  padding: 3rem 0;
+}
+.footer {
+  padding: 1.5rem max(1rem, calc((100% - 72rem) / 2));
+  color: var(--muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 650px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .main {
+    padding: 2rem 0;
+  }
+  .link {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8rem;
+  }
+}
