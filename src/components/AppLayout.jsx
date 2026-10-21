@@ -1,43 +1,40 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { BookOpen, Home, PenLine, Search } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import styles from "./AppLayout.module.css";
-
 const links = [
-  { to: "/", label: "Beranda", icon: Home, end: true },
-  { to: "/write", label: "Tulis Menfess", icon: PenLine },
-  { to: "/status", label: "Periksa Status", icon: Search },
-  { to: "/guide", label: "Panduan", icon: BookOpen },
+  { to: "/", label: "Beranda", icon: "home" },
+  { to: "/write", label: "Tulis", icon: "write" },
+  { to: "/status", label: "Status", icon: "status" },
+  { to: "/guide", label: "Panduan", icon: "guide" },
 ];
-
 export default function AppLayout() {
-  return (
-    <div className={styles.shell}>
-      <header className={styles.header}>
-        <NavLink to="/" className={styles.logo}>
-          Menfess Spenthree
-        </NavLink>
-        <nav aria-label="Navigasi utama">
-          {links.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `${styles.link} ${isActive ? styles.active : ""}`
-              }
-            >
-              <Icon size={17} aria-hidden="true" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-      </header>
-      <main className={styles.main}>
-        <Outlet />
-      </main>
-      <footer className={styles.footer}>
-        Ruang pesan anonim untuk komunitas Spenthree.
-      </footer>
-    </div>
-  );
+  const { pathname } = useLocation();
+  const previousPath = useRef(pathname);
+  const main = useRef(null);
+  useEffect(() => {
+    if (previousPath.current !== pathname) {
+      window.scrollTo?.(0, 0);
+      main.current?.focus({ preventScroll: true });
+      previousPath.current = pathname;
+    }
+  }, [pathname]);
+  return <div className={styles.shell}>
+    <a className={styles.skip} href="#main">Lewati ke konten</a>
+    <header className={styles.header}><div className={styles.headerInner}>
+      <Link to="/" className={styles.brand} aria-label="Beranda SAGARA">
+        <span className={styles.osis}><img src="/design/osis.png" alt="" /></span>
+        <span className={styles.identity}><span>spenthreeskj_fess</span><span>SMP Negeri 3 Sokaraja</span></span>
+      </Link>
+      <span className={styles.school}><span className={styles.schoolCrop}><img src="/design/school.png" alt="SMP Negeri 3 Sokaraja" /></span></span>
+    </div></header>
+    <main className={styles.main} id="main" ref={main} tabIndex={-1}><Outlet /></main>
+    <nav className={styles.nav} aria-label="Navigasi utama"><div className={styles.navInner}>
+      {links.map(({ to, label, icon }) => {
+        const selected = pathname === to || (to === "/write" && pathname === "/review");
+        return <Link key={to} to={to} aria-current={selected ? "page" : undefined} className={styles.link + (selected ? " " + styles.active : "")}>
+          <span className={styles.navIcon}><img src={"/design/" + icon + (selected ? "-active" : "") + ".svg"} alt="" /></span><span>{label}</span>
+        </Link>;
+      })}
+    </div></nav>
+  </div>;
 }

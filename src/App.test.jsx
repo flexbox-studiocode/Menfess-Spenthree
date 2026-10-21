@@ -13,12 +13,12 @@ const renderRoute = (path) =>
 
 describe("foundation routes", () => {
   it.each([
-    ["/", "Sampaikan pesanmu, tetap anonim."],
-    ["/write", "Tulis Menfess"],
-    ["/review", "Periksa Pesan"],
-    ["/status", "Periksa Status"],
-    ["/menfess/public-id", "Detail Menfess"],
-    ["/guide", "Panduan"],
+    ["/", "Menfess Spenthree"],
+    ["/write", "Tulis menfess"],
+    ["/review", "Periksa pesan"],
+    ["/status", "Status pesan"],
+    ["/menfess/public-id", "Detail menfess"],
+    ["/guide", "Panduan menfess"],
     ["/missing", "Halaman tidak ditemukan"],
   ])("renders %s without backend configuration", (path, heading) => {
     renderRoute(path);
@@ -26,7 +26,7 @@ describe("foundation routes", () => {
       screen.getByRole("heading", { level: 1, name: heading }),
     ).toBeInTheDocument();
     if (path === "/write") expect(screen.getByRole("textbox", { name: /Isi pesan/ })).toBeInTheDocument();
-    if (path === "/status") expect(screen.getByRole("textbox", { name: /Kode tracking/ })).toBeInTheDocument();
+    if (path === "/status") expect(screen.getByRole("textbox", { name: /Kode pelacakan/ })).toBeInTheDocument();
   });
 
   it("navigates using the primary links", async () => {
@@ -36,14 +36,14 @@ describe("foundation routes", () => {
       screen.getByRole("navigation").querySelector('a[href="/write"]'),
     );
     expect(
-      screen.getByRole("heading", { name: "Tulis Menfess" }),
+      screen.getByRole("heading", { name: "Tulis menfess" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("navigation").querySelector('[aria-current="page"]'),
     ).toHaveAttribute("href", "/write");
-    await user.click(screen.getByRole("link", { name: "Periksa Status" }));
+    await user.click(screen.getByRole("link", { name: "Status", exact: true }));
     expect(
-      screen.getByRole("heading", { name: "Periksa Status" }),
+      screen.getByRole("heading", { name: "Status pesan" }),
     ).toBeInTheDocument();
   });
 });

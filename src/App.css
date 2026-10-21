@@ -1,42 +1,8 @@
-:root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #19212e;
-  background: #f8f9fb;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  --ink: #19212e;
-  --muted: #526174;
-  --surface: #fff;
-  --border: #d7dfe9;
-  --accent: #2949a2;
-  --accent-soft: #e9efff;
-  --radius: 0.6rem;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-a {
-  color: var(--accent);
-}
-
-a:focus-visible,
-button:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
-}
-
-p,
-li {
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-}
-
-li {
-  margin: 0.5rem 0;
-}
+@font-face{font-family:Inter;src:url('/design/inter-400.ttf') format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:Inter;src:url('/design/inter-500.ttf') format('truetype');font-weight:500;font-display:swap}
+@font-face{font-family:Inter;src:url('/design/inter-600.ttf') format('truetype');font-weight:600;font-display:swap}
+@font-face{font-family:Inter;src:url('/design/inter-700.ttf') format('truetype');font-weight:700;font-display:swap}
+@font-face{font-family:Inter;src:url('/design/inter-800.ttf') format('truetype');font-weight:800;font-display:swap}
+@font-face{font-family:Inter;src:url('/design/inter-900.ttf') format('truetype');font-weight:900;font-display:swap}
+:root{font-family:Inter,sans-serif;color:#fff;background:#181d27;font-synthesis:none;text-rendering:optimizeLegibility;--ink:#fff;--muted:#667185;--surface:#222936;--border:#394253;--accent:#343782;--accent-soft:#2b354a;--radius:10px;--link:#9a9cc6}
+*{box-sizing:border-box}body{margin:0;min-width:320px}a{color:var(--link)}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:wait;opacity:.65}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #9a9fff;outline-offset:4px}p{overflow-wrap:anywhere}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}::selection{background:#5559ad;color:white}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}

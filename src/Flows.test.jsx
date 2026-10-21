@@ -1,0 +1,120 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import App from "./App.jsx";
+import { DRAFT_KEY, readDraft, saveDraft } from "./services/index.js";
+import { getSupabaseClient } from "./lib/supabase.js";
+
+vi.mock("./lib/supabase.js", () => ({ getSupabaseClient: vi.fn() }));
+const invoke = vi.fn();
+const draft = { category: "aspirasi", recipient: "OSIS Spenthree", content: "Tolong tambahkan tempat membaca di taman sekolah.", rules_accepted: true };
+const renderRoute = path => render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
+beforeEach(() => {
+  sessionStorage.clear(); invoke.mockReset();
+  getSupabaseClient.mockReturnValue({ functions: { invoke } });
+});
+
+describe("preserved menfess integration", () => {
+  it("validates, saves a draft, and opens review without sending", async () => {
+    const user = userEvent.setup(); renderRoute("/write");
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("10–500");
+    await user.selectOptions(screen.getByLabelText("Kategori"), "aspirasi");
+    await user.type(screen.getByLabelText(/Untuk/), draft.recipient);
+    await user.type(screen.getByLabelText("Isi pesan"), draft.content);
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Setujui");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(screen.getByRole("heading", { name: "Periksa pesan" })).toBeInTheDocument();
+    expect(readDraft()).toEqual(draft); expect(invoke).not.toHaveBeenCalled();
+  });
+  it("retains request_id on failure and retry, clears draft only on success", async () => {
+    const user = userEvent.setup(); saveDraft(draft);
+    let finish;
+    invoke.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    renderRoute("/review");
+    await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
+    await screen.findByRole("alert");
+    const payload = invoke.mock.calls[0][1].body;
+    expect(payload).toMatchObject(draft);
+    expect(payload.request_id).toMatch(/^[\da-f-]{36}$/);
+    expect(readDraft()).toEqual(payload);
+    await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
+    expect(screen.getByRole("button", { name: "Mengirim..." })).toBeDisabled();
+    expect(invoke.mock.calls[1][1].body).toEqual(payload);
+    finish({ data: { accepted: true, status: "queued", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Menfess diterima." }, error: null });
+    await screen.findByRole("heading", { name: "Status pesan" });
+    expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(screen.getByText("SPT-0123456789ABCDEF0123456789ABCDEF")).toBeInTheDocument();
+    expect(screen.getByText("Pesan diterima")).toBeInTheDocument();
+  });
+  it("shows missing draft and returns to writing", async () => {
+    const user = userEvent.setup(); renderRoute("/review");
+    expect(screen.getByText("Belum ada draf untuk diperiksa.")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Tulis pesan" }));
+    expect(screen.getByRole("textbox", { name: "Isi pesan" })).toBeInTheDocument();
+  });
+  it("requires review consent and keeps the draft when editing", async () => {
+    const user = userEvent.setup(); saveDraft(draft); renderRoute("/review");
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Kirim Menfess" })).toBeDisabled();
+    expect(readDraft().rules_accepted).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Ubah Pesan" }));
+    expect(screen.getByLabelText("Isi pesan")).toHaveValue(draft.content);
+    expect(screen.getByLabelText(/Untuk/)).toHaveValue(draft.recipient);
+    expect(screen.getByLabelText("Kategori")).toHaveValue("aspirasi");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it("handles clipboard refusal without losing the receipt", async () => {
+    const user = userEvent.setup(); saveDraft(draft);
+    invoke.mockResolvedValue({ data: { status: "queued", tracking_code: "SPT-test", message: "Diterima" }, error: null });
+    renderRoute("/review");
+    await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
+    await screen.findByRole("button", { name: "Salin kode" });
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("Denied"));
+    await user.click(screen.getByRole("button", { name: "Salin kode" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("secara manual");
+    expect(screen.getByText("SPT-test")).toBeInTheDocument();
+  });
+  it("tracks with the existing POST contract and real publication fields", async () => {
+    const user = userEvent.setup();
+    invoke.mockResolvedValue({ data: { status: "published", message: "Pesan berhasil dipublikasikan.", published_at: "2026-10-21T10:00:00Z", ig_permalink: "https://www.instagram.com/p/example/" }, error: null });
+    renderRoute("/status");
+    await user.type(screen.getByLabelText("Kode pelacakan"), "SPT-0123456789ABCDEF0123456789ABCDEF");
+    await user.click(screen.getByRole("button", { name: "Periksa status" }));
+    await screen.findByText("Pesan berhasil dipublikasikan.");
+    expect(invoke).toHaveBeenCalledWith("track-menfess", expect.objectContaining({ body: { tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF" } }));
+    expect(screen.getByRole("link", { name: /Buka Instagram/ })).toHaveAttribute("href", "https://www.instagram.com/p/example/");
+    expect(screen.queryByText("Ditanggapi OSIS")).not.toBeInTheDocument();
+  });
+  it("shows tracking errors and allows retry", async () => {
+    const user = userEvent.setup();
+    invoke.mockResolvedValue({ data: null, error: { context: { status: 404, json: async () => ({ error: { code: "NOT_FOUND" } }) } } });
+    renderRoute("/status"); await user.type(screen.getByLabelText("Kode pelacakan"), "SPT-test");
+    await user.click(screen.getByRole("button", { name: "Periksa status" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("tidak ditemukan");
+    expect(screen.getByRole("button", { name: "Periksa status" })).toBeEnabled();
+  });
+  it("counts Unicode code points and normalizes a valid emoji draft", async () => {
+    const user = userEvent.setup(); renderRoute("/write");
+    await user.type(screen.getByLabelText("Isi pesan"), "😀".repeat(6));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("10–500");
+    await user.clear(screen.getByLabelText("Isi pesan"));
+    await user.type(screen.getByLabelText("Isi pesan"), "😀".repeat(10));
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(readDraft().content).toBe("😀".repeat(10));
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it("filters unavailable feed without fake posts or likes", async () => {
+    const user = userEvent.setup(); renderRoute("/");
+    await user.click(screen.getByRole("button", { name: "Aspirasi", exact: true }));
+    expect(screen.getByRole("button", { name: "Aspirasi", exact: true })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Linimasa belum tersedia/)).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});
