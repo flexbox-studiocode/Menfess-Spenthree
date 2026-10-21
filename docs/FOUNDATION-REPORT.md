@@ -64,4 +64,4 @@ CLI login terverifikasi tanpa mencetak token. Project `Menfess-Spenthree`, ref `
 
 ## Rekomendasi berikutnya untuk Kiandra
 
-Lanjutkan K-04 sebagai vertical slice submit/idempotency di atas database dev yang sudah terverifikasi. Setelah itu K-05 contract tests, baru K-02 Instagram access spike dan K-06 publisher. Jangan membuka grants browser ke tabel internal untuk mempercepat UI.
+K-04 telah diterapkan sebagai vertical slice submit/idempotency di atas database dev yang terverifikasi. Lanjutkan K-05 feed/detail dan pengujian HTTP concurrency. Setelah itu K-05 contract tests, baru K-02 Instagram access spike dan K-06 publisher. Jangan membuka grants browser ke tabel internal untuk mempercepat UI.

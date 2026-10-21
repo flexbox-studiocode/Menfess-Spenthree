@@ -26,7 +26,7 @@ Browser tidak boleh memakai `.from('messages')`, `.from('publication_jobs')`, at
 1. Server membuat minimal 128 bit acak kriptografis, encoding tracking kanonis `SPT-...`.
 2. HMAC-SHA-256 atas kode kanonis dengan `TRACKING_HASH_SECRET` dari secret manager server; simpan `v1:<hex>`. Tidak ada secret/hash generator dalam SQL. Lookup HMAC memakai query terparameterisasi; respons generik dan rate limiting membatasi tebakan. Secret version v1 harus tetap tersedia selama kode masih berlaku; rotasi format versi melalui migration berikutnya, jangan mengganti secret tanpa strategi migrasi.
 3. HMAC payload kanonis dengan secret server terpisah, untuk deteksi payload berubah tanpa membuka isi. Encrypt tanda terima dengan AEAD (misalnya AES-256-GCM), kunci server terpisah, random nonce dan authentication tag disertakan ciphertext, AAD request_id + key version. Jangan menyimpan key bersama ciphertext.
-4. RPC transaksi server-only/mekanisme transaksi PostgreSQL pada K-04 wajib membuat message (trigger membuat job) + receipt secara atomik. Jangan tiga request REST terpisah. Unique request_id melindungi race. Endpoint belum dibuat.
+4. RPC `submit_menfess_atomic` server-only membuat message (trigger membuat job) + receipt secara atomik. Jangan tiga request REST terpisah. Unique request_id melindungi race. Edge Functions K-04 memanggil RPC; secrets tetap di runtime server.
 5. Retry identik hanya boleh decrypt receipt bila expires_at > now(); payload berbeda 409. Receipt expired tidak boleh dipakai walau menunggu purge. Request_id tetap di messages sehingga retry sesudah purge tidak membuat duplikat; balas RECEIPT_EXPIRED.
 
 ## Retensi

@@ -25,7 +25,8 @@ describe("foundation routes", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: heading }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    if (path === "/write") expect(screen.getByRole("textbox", { name: /Isi pesan/ })).toBeInTheDocument();
+    if (path === "/status") expect(screen.getByRole("textbox", { name: /Kode tracking/ })).toBeInTheDocument();
   });
 
   it("navigates using the primary links", async () => {
@@ -40,11 +41,9 @@ describe("foundation routes", () => {
     expect(
       screen.getByRole("navigation").querySelector('[aria-current="page"]'),
     ).toHaveAttribute("href", "/write");
-    await user.click(
-      screen.getByRole("link", { name: "Lihat halaman pratinjau" }),
-    );
+    await user.click(screen.getByRole("link", { name: "Periksa Status" }));
     expect(
-      screen.getByRole("heading", { name: "Periksa Pesan" }),
+      screen.getByRole("heading", { name: "Periksa Status" }),
     ).toBeInTheDocument();
   });
 });

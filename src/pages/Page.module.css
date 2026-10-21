@@ -40,6 +40,18 @@
   color: var(--muted);
   max-width: 42rem;
 }
+.form { display: grid; gap: 1rem; max-width: 38rem; margin-top: 2rem; }
+.form label { display: grid; gap: .4rem; font-weight: 600; }
+.form input, .form select, .form textarea { font: inherit; padding: .75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: inherit; }
+.form textarea { min-height: 9rem; resize: vertical; }
+.counter, .muted { color: var(--muted); font-size: .9rem; font-weight: 400; }
+.checkbox { display: flex !important; grid-template-columns: auto 1fr; align-items: flex-start; }
+.checkbox input { margin-top: .25rem; }
+.error { color: #a32929; background: #fff0f0; padding: .75rem; border-radius: var(--radius); }
+.success, .preview { margin-top: 2rem; padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.message { white-space: pre-wrap; line-height: 1.6; }
+button { cursor: pointer; font: inherit; border: 0; }
+button:disabled { cursor: wait; opacity: .65; }
 .placeholder {
   margin-top: 2rem;
   padding: 1.25rem;

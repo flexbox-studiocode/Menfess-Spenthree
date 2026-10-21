@@ -1,0 +1,3 @@
+export const json = (body: unknown, status = 200, extra: Record<string,string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...extra } });
+export const cors = { "access-control-allow-origin": Deno.env.get("CORS_ORIGIN") ?? "", "access-control-allow-headers": "content-type, authorization", "access-control-allow-methods": "POST, OPTIONS" };
+export const error = (code: string, requestId: string, status: number, fields?: Record<string,string>) => json({ error: { code, message: code === "NOT_FOUND" ? "Tidak ditemukan." : "Periksa kembali data yang dikirim.", request_id: requestId, ...(fields ? { fields } : {}) } }, status, cors);
