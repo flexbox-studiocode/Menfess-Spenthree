@@ -36,11 +36,15 @@ Deno.serve(async (req) => {
     const version = "v1";
     const encrypted = await encrypt(receiptSecret, JSON.stringify({ tracking_code: tracking, status: "queued" }), `${request_id}:${version}`);
     const db = createClient(supabaseUrl, serviceKey);
-    const { data, error: dbError } = await db.rpc("submit_menfess_atomic", { p_request_id: request_id, p_tracking_code_hash: trackingHash, p_category: category, p_recipient: rec, p_content: normalized, p_payload_hash: payloadHash, p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version });
-    if (dbError || !data) throw dbError || new Error("Atomic submit returned no data");
-    if (!data.receipt_payload_hash || !data.encrypted_response) return error("RECEIPT_EXPIRED", rid, 409);
+    const { data: rpcData, error: dbError } = await db.rpc("submit_menfess_atomic", { p_request_id: request_id, p_tracking_code_hash: trackingHash, p_category: category, p_recipient: rec, p_content: normalized, p_payload_hash: payloadHash, p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version });
+    if (dbError || !rpcData) throw dbError || new Error("Atomic submit returned no data");
+    // PostgREST returns a composite RPC result as a one-row array.
+    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    const nested = row?.submit_result ?? row?.submit_menfess_atomic ?? row;
+    const data = typeof nested === "string" ? JSON.parse(nested) : nested;
+    if (!data?.receipt_payload_hash || !data?.encrypted_response) return error("RECEIPT_EXPIRED", rid, 409);
     if (data.receipt_payload_hash !== payloadHash) return error("IDEMPOTENCY_CONFLICT", rid, 409);
-    if (new Date(data.expires_at) <= new Date()) return error("RECEIPT_EXPIRED", rid, 409);
+    if (!data.expires_at || new Date(data.expires_at) <= new Date()) return error("RECEIPT_EXPIRED", rid, 409);
     const receipt = JSON.parse(await decrypt(receiptSecret, new Uint8Array(typeof data.encrypted_response === "string" ? Uint8Array.from((data.encrypted_response.replace(/^\\x/, "").match(/.{1,2}/g) ?? []).map((part) => parseInt(part, 16))) : data.encrypted_response), `${request_id}:${data.encryption_key_version}`));
     if (typeof receipt.tracking_code !== "string") throw new Error("Invalid receipt");
     return json({ accepted: true, tracking_code: receipt.tracking_code, status: "queued", message: "Menfess diterima dan sedang diproses. Simpan kode pelacakanmu." }, 202, cors);

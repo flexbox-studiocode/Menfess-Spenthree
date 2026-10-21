@@ -7,28 +7,50 @@ function assertResponseShape(data) {
   return data;
 }
 
+async function readErrorDetail(error) {
+  const context = error?.context;
+  if (!context) return null;
+  try {
+    if (typeof context.json === "function") return await context.json();
+    if (typeof context.text === "function") {
+      const text = await context.text();
+      return JSON.parse(text);
+    }
+  } catch { return null; }
+  return null;
+}
+
+function userError(code, status) {
+  if (code === "VALIDATION_ERROR") return "Periksa kembali kategori, isi pesan, penerima, dan persetujuan.";
+  if (code === "IDEMPOTENCY_CONFLICT") return "Request ID ini sudah dipakai untuk isi pesan berbeda. Pertahankan draf atau buat request baru.";
+  if (code === "RECEIPT_EXPIRED") return "Batas retry request ini sudah berakhir. Buat pesan baru untuk mengirim ulang.";
+  if (code === "NOT_FOUND") return "Kode tracking tidak ditemukan.";
+  if (status === 429) return "Terlalu banyak permintaan. Coba lagi nanti.";
+  if (status >= 500) return "Server sedang mengalami gangguan. Coba lagi dengan request yang sama.";
+  if (status === 502 || status === 503 || status === 504) return "Gateway sedang tidak tersedia. Coba lagi dengan request yang sama.";
+  return "Permintaan belum dapat diproses. Coba lagi dengan request yang sama.";
+}
+
 async function invoke(name, body, timeoutMs = 15000) {
   const client = getSupabaseClient();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    if (new TextEncoder().encode(JSON.stringify(body)).byteLength > MAX_PAYLOAD_BYTES) {
-      throw new Error("Payload terlalu besar.");
-    }
+    if (new TextEncoder().encode(JSON.stringify(body)).byteLength > MAX_PAYLOAD_BYTES) throw new Error("Payload terlalu besar.");
     const { data, error } = await client.functions.invoke(name, { body, signal: controller.signal });
     if (error) {
-      if (error.name === "AbortError" || controller.signal.aborted) {
-        throw new Error("Permintaan belum terkonfirmasi. Gunakan request yang sama untuk mencoba lagi.");
-      }
-      const context = error.context;
-      const detail = context?.json ? await context.json().catch(() => null) : null;
-      const message = detail?.error?.message || "Permintaan belum dapat diproses.";
-      const err = new Error(message);
+      if (error.name === "AbortError" || controller.signal.aborted) throw new Error("Permintaan belum terkonfirmasi. Gunakan request yang sama untuk mencoba lagi.");
+      const detail = await readErrorDetail(error);
+      const err = new Error(userError(detail?.error?.code, error.context?.status));
       err.code = detail?.error?.code;
-      err.status = context?.status;
+      err.status = error.context?.status;
+      err.requestId = detail?.error?.request_id;
       throw err;
     }
     return assertResponseShape(data);
+  } catch (error) {
+    if (error instanceof TypeError || error?.message?.toLowerCase().includes("failed to fetch")) throw new Error("Koneksi atau CORS gagal. Pastikan URL Supabase dan origin frontend benar.");
+    throw error;
   } finally { clearTimeout(timeout); }
 }
 
@@ -36,11 +58,7 @@ export function submitMenfess(payload) { return invoke("submit-menfess", payload
 export function trackMenfess(trackingCode) { return invoke("track-menfess", { tracking_code: trackingCode }); }
 
 export const DRAFT_KEY = "menfess-spenthree-draft";
-export function createRequestId() {
-  return crypto.randomUUID();
-}
+export function createRequestId() { return crypto.randomUUID(); }
 export function saveDraft(draft) { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); }
-export function readDraft() {
-  try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; }
-}
+export function readDraft() { try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; } }
 export function clearDraft() { sessionStorage.removeItem(DRAFT_KEY); }
