@@ -1,5 +1,7 @@
 # Menfess Spenthree
 
+Alur kirim terbaru: pesan yang lolos validasi dan filter lokal langsung disimpan privat dan mendapat kode pelacakan, tanpa menunggu AI. Pemeriksaan dan publikasi berlangsung melalui worker terpisah. Lihat [antrean moderasi](docs/MODERATION-QUEUE.md) untuk perilaku, batas kapasitas, serta langkah deployment. Catatan fondasi di bawah merekam tahap awal proyek.
+
 Fondasi K-01/K-03: React + Vite (JavaScript), React Router, CSS Modules, Lucide React, Supabase PostgreSQL 17. Tanpa login pengguna atau panel admin/moderator. UI hanya placeholder teknis untuk dilanjutkan Reiner; endpoint submit/feed/detail/tracking dan publisher Instagram **belum diimplementasikan**.
 
 ## Persiapan

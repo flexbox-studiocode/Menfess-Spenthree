@@ -420,6 +420,9 @@ verify_jwt = false
 [functions.track-menfess]
 verify_jwt = false
 
+[functions.process-moderation-queue]
+verify_jwt = false
+
 [functions.public-feed]
 verify_jwt = false
 

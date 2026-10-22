@@ -90,14 +90,15 @@ describe("preserved menfess integration", () => {
     expect(payload.request_id).toMatch(/^[\da-f-]{36}$/);
     expect(readDraft()).toEqual(payload);
     await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
-    expect(screen.getByRole("button", { name: "Memeriksa pesan..." })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Memeriksa pesan..." })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Mengirim pesan..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mengirim pesan..." })).toHaveAttribute("aria-busy", "true");
     expect(invoke.mock.calls[1][1].body).toEqual(payload);
-    finish({ data: { accepted: true, status: "queued", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Menfess diterima." }, error: null });
+    finish({ data: { accepted: true, status: "pending_moderation", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Pesan tersimpan." }, error: null });
     await screen.findByRole("heading", { name: "Status pesan" });
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(screen.getByText("SPT-0123456789ABCDEF0123456789ABCDEF")).toBeInTheDocument();
-    expect(screen.getByText("Pesan diterima")).toBeInTheDocument();
+    expect(screen.getByText("Pesan tersimpan — menunggu pemeriksaan otomatis")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Buka Instagram/ })).not.toBeInTheDocument();
     expect(screen.getByText("Menfess berhasil dikirim")).toBeInTheDocument();
   });
   it("shows missing draft and returns to writing", async () => {

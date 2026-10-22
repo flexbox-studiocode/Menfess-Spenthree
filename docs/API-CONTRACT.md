@@ -1,6 +1,6 @@
 # Kontrak API awal — Kiandra / Reiner
 
-Status: rancangan K-01/K-03, **belum ada endpoint yang diimplementasikan**. Sumber: PRD §10–12 dan arsitektur §5–7. Semua nama JSON menggunakan snake_case. Tidak ada login, panel staf, atau akses browser ke tabel internal.
+Catatan awal K-01/K-03 dengan pembaruan penerimaan asinkron 22 Oktober 2026; source endpoint dan tes adalah acuan implementasi. Sumber: PRD §10–12 dan arsitektur §5–7. Semua nama JSON menggunakan snake_case. Tidak ada login, panel staf, atau akses browser ke tabel internal.
 
 ## Nilai dan normalisasi
 
@@ -12,7 +12,8 @@ Status: rancangan K-01/K-03, **belum ada endpoint yang diimplementasikan**. Sumb
 
 | Status internal / respons tracking | Label aman |
 |---|---|
-| queued | Diterima |
+| pending_moderation | Tersimpan privat, menunggu pemeriksaan otomatis |
+| queued | Diterima setelah lolos moderasi |
 | processing | Sedang diproses |
 | publishing | Sedang dipublikasikan |
 | published | Berhasil dipublikasikan |
@@ -34,18 +35,18 @@ Status: rancangan K-01/K-03, **belum ada endpoint yang diimplementasikan**. Sumb
 }
 ```
 
-202 setelah transaksi pesan, job (trigger outbox), dan receipt terenkripsi berhasil commit:
+202 setelah kiriman privat dan receipt terenkripsi berhasil disimpan atomik. Tidak menunggu AI; messages dan publication job baru dibuat setelah AI memberi allow:
 
 ```json
 {
   "accepted": true,
   "tracking_code": "SPT-<kode-acak-server>",
-  "status": "queued",
-  "message": "Menfess diterima dan sedang diproses. Simpan kode pelacakanmu."
+  "status": "pending_moderation",
+  "message": "Pesan tersimpan. Pemeriksaan otomatis berjalan di belakang layar. Simpan kode pelacakanmu."
 }
 ```
 
-Tidak menunggu Instagram. Tracking code placeholder, bukan nilai yang boleh di-hardcode. Respons yang sama pada retry request/payload identik selama receipt belum kedaluwarsa (maksimal 24 jam); respons memakai `Cache-Control: no-store`. Payload berbeda pada request_id sama: 409 `IDEMPOTENCY_CONFLICT`. Setelah TTL: 409 `RECEIPT_EXPIRED`, tidak membuat pesan/job baru dan tidak membuat ulang kode tracking. Jangan log body/response. Validasi/konten ditolak tidak membuat job; blocked yang disimpan untuk operasi tidak perlu mengembalikan tracking code.
+Tidak menunggu AI atau Instagram. Gangguan AI/kuota tidak menolak penerimaan; worker menjadwalkan ulang kiriman privat. Antrean penuh mengembalikan 503 QUEUE_FULL, penyimpanan gagal mengembalikan 503 MODERATION_UNAVAILABLE atau 500 INTERNAL_ERROR; draf tetap tersimpan. Filter lokal masih dapat menolak 422 CONTENT_UNSAFE. Tracking code placeholder, bukan nilai yang boleh di-hardcode. Respons yang sama pada retry request/payload identik selama receipt belum kedaluwarsa (maksimal 24 jam); respons memakai `Cache-Control: no-store`. Payload berbeda pada request_id sama: 409 `IDEMPOTENCY_CONFLICT`. Setelah TTL: 409 `RECEIPT_EXPIRED`, tidak membuat pesan/job baru dan tidak membuat ulang kode tracking. Jangan log body/response. Validasi/konten ditolak tidak membuat job; blocked yang disimpan untuk operasi tidak perlu mengembalikan tracking code.
 
 ## GET /functions/v1/public-feed?category=...&cursor=...
 

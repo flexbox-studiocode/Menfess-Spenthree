@@ -23,7 +23,7 @@ try {
       requests.push(route.request().postDataJSON());
       await new Promise(resolve => setTimeout(resolve, 300));
       const status = mode === 'allow' ? 202 : mode === 'unsafe' ? 422 : 503;
-      const body = status === 202 ? { accepted: true, status: 'queued', tracking_code: 'SPT-0123456789ABCDEF0123456789ABCDEF', message: 'Diterima dalam antrean.' } : { error: { code: status === 422 ? 'CONTENT_UNSAFE' : 'MODERATION_UNAVAILABLE' } };
+      const body = status === 202 ? { accepted: true, status: 'pending_moderation', tracking_code: 'SPT-0123456789ABCDEF0123456789ABCDEF', message: 'Pesan tersimpan. Pemeriksaan otomatis berjalan di belakang layar.' } : { error: { code: status === 422 ? 'CONTENT_UNSAFE' : 'MODERATION_UNAVAILABLE' } };
       await route.fulfill({ status, headers, body: JSON.stringify(body) });
     });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
@@ -31,8 +31,8 @@ try {
     await page.getByLabel('Isi pesan').fill('Tolong tambah tempat sampah di taman sekolah.');
     await page.getByRole('checkbox').check(); await page.getByRole('button', { name: 'Periksa pesan', exact: true }).click();
     await page.getByRole('button', { name: 'Kirim Menfess' }).click();
-    await page.getByRole('button', { name: 'Memeriksa pesan...' }).waitFor();
-    assert(await page.getByRole('button', { name: 'Memeriksa pesan...' }).isDisabled());
+    await page.getByRole('button', { name: 'Mengirim pesan...' }).waitFor();
+    assert(await page.getByRole('button', { name: 'Mengirim pesan...' }).isDisabled());
     await page.getByRole('alert').filter({ hasText: 'Pesan belum dapat dikirim' }).waitFor();
     const first = requests.at(-1).request_id;
     assert(await page.evaluate(() => !!sessionStorage.getItem('menfess-spenthree-draft')));
@@ -48,9 +48,10 @@ try {
     assert.notEqual(requests.at(-1).request_id, first);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('menfess-spenthree-draft')), null);
     assert.equal(await page.getByRole('link', { name: 'Buka Instagram' }).count(), 0);
+    await page.getByText('Pesan tersimpan — menunggu pemeriksaan otomatis', { exact: true }).waitFor();
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.deepEqual(errors, []);
-    checks.push({ width, busyDisabled: true, rejection: true, providerFailure: true, draftPreserved: true, retrySameId: true, editNewId: true, queuedHonest: true, noOverflow: true, noRuntimeErrors: true });
+    checks.push({ width, busyDisabled: true, rejection: true, storageFailure: true, draftPreserved: true, retrySameId: true, editNewId: true, pendingReceipt: true, noOverflow: true, noRuntimeErrors: true });
     await context.close();
   }
   await writeFile('artifacts/moderation-browser/report.json', JSON.stringify(checks, null, 2));

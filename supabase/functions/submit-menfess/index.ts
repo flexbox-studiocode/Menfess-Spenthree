@@ -1,8 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decrypt, encrypt, hmac, hex } from "../_shared/crypto.ts";
 import { corsForRequest, error, json, logFailure } from "../_shared/http.ts";
-import { contentFingerprint, evaluateContentSafety, readSafetyConfig, safetyPolicyVersion } from "../_shared/content-safety.ts";
-import { classifyMessage, ModerationUnavailable, readModerationConfig, reservedModerationTokens } from "../_shared/moderation-provider.ts";
+import { evaluateContentSafety, readSafetyConfig } from "../_shared/content-safety.ts";
+import { ModerationUnavailable } from "../_shared/moderation-provider.ts";
 
 const categories = new Set(["menfess", "aspirasi", "curhat", "apresiasi"]);
 const enc = new TextEncoder();
@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
   const cors = corsForRequest(req);
   const fail = (code: string, status: number, fields?: Record<string, string>) => error(code, rid, status, fields, cors);
   let stage = "validation";
-  let cleanup: ((retryAfter: number) => Promise<void>) | undefined;
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return fail("VALIDATION_ERROR", 400);
   if (Number(req.headers.get("content-length") ?? 0) > 12000) return fail("PAYLOAD_TOO_LARGE", 413);
@@ -60,18 +59,17 @@ Deno.serve(async (req) => {
       const encoded = data.encrypted_response;
       const bytes = typeof encoded === "string" ? Uint8Array.from((encoded.replace(/^\\x/, "").match(/.{1,2}/g) ?? []).map(part => parseInt(part, 16))) : new Uint8Array(encoded as number[]);
       const receipt = JSON.parse(await decrypt(receiptSecret!, bytes, `${request_id}:${data.encryption_key_version}`));
-      if (typeof receipt.tracking_code !== "string") throw new Error("Invalid receipt");
-      return json({ accepted: true, tracking_code: receipt.tracking_code, status: "queued", message: "Menfess diterima dan sedang diproses. Simpan kode pelacakanmu." }, 202, cors);
+      if (typeof receipt.tracking_code !== "string" || !["queued", "pending_moderation"].includes(receipt.status)) throw new Error("Invalid receipt");
+      return json({ accepted: true, tracking_code: receipt.tracking_code, status: receipt.status, message: "Pesan tersimpan. Pemeriksaan otomatis berjalan di belakang layar. Simpan kode pelacakanmu." }, 202, cors);
     };
     if (existing.kind === "replay") return await reply({ ...existing, receipt_payload_hash: existing.payload_hash });
     if (existing.kind !== "missing") throw new ModerationUnavailable();
     stage = "content_safety";
     const safetyConfig = readSafetyConfig((key) => Deno.env.get(key));
     const recipientConfig = { ...safetyConfig, minCodePoints: 1, maxCodePoints: 80 };
-    const [contentSafety, recipientSafety, policyVersion] = await Promise.all([
+    const [contentSafety, recipientSafety] = await Promise.all([
       evaluateContentSafety(normalized, safetyConfig),
       rec === null ? Promise.resolve(null) : evaluateContentSafety(rec, recipientConfig),
-      safetyPolicyVersion(safetyConfig, recipientConfig, Deno.env.get("MODERATION_POLICY_REVISION")),
     ]);
     if (!contentSafety.approved || recipientSafety?.approved === false) {
       return fail("CONTENT_UNSAFE", 422, {
@@ -79,44 +77,22 @@ Deno.serve(async (req) => {
         ...(recipientSafety?.approved === false ? { recipient: "Penerima mengandung informasi kontak atau konten yang dilarang." } : {}),
       });
     }
-    stage = "moderation";
-    const config = readModerationConfig(key => Deno.env.get(key));
-    const input = { category, recipient: rec, content: normalized };
-    const reservation = await call("reserve_moderation", { p_request_id: request_id, p_payload_hash: payloadHash, p_policy_version: policyVersion, p_content_hash: await contentFingerprint(input) });
-    if (reservation.kind === "conflict") return fail("IDEMPOTENCY_CONFLICT", 409);
-    let verdict;
-    if (reservation.kind === "cached") verdict = reservation;
-    else if (reservation.kind === "acquired" && typeof reservation.lease_token === "string") {
-      const lease = { p_request_id: request_id, p_lease_token: reservation.lease_token };
-      cleanup = async retryAfter => {
-        await db.rpc("release_moderation", { ...lease, p_retry_after: retryAfter });
-      };
-      const allowed = await call("reserve_moderation_quota", { ...lease, p_reserved_tokens: reservedModerationTokens(input), p_rpm: config.requestsPerMinute, p_rpd: config.requestsPerDay, p_tpm: config.tokensPerMinute, p_tpd: config.tokensPerDay });
-      if (allowed !== true) throw new ModerationUnavailable();
-      verdict = await classifyMessage(input, config, req.signal);
-      const finished = await call("finish_moderation", { ...lease, p_decision: verdict.decision, p_reasons: verdict.reasons });
-      if (finished !== true) throw new ModerationUnavailable();
-      cleanup = undefined;
-    } else throw new ModerationUnavailable();
-    if (verdict.decision === "reject" || verdict.decision === "uncertain") return fail("CONTENT_UNSAFE", 422);
-    if (verdict.decision !== "allow") throw new ModerationUnavailable();
     stage = "encrypt_receipt";
     const tracking = code(), trackingHash = `v1:${await hmac(trackingSecret!, tracking)}`;
     const version = "v1";
-    const encrypted = await encrypt(receiptSecret!, JSON.stringify({ tracking_code: tracking, status: "queued" }), `${request_id}:${version}`);
-    stage = "rpc_submit";
-    const { data: rpcData, error: dbError } = await db.rpc("submit_menfess_atomic", { p_request_id: request_id, p_tracking_code_hash: trackingHash, p_category: category, p_recipient: rec, p_content: normalized, p_payload_hash: payloadHash, p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version, p_safety_policy_version: policyVersion });
-    if (dbError || !rpcData) throw dbError || new Error("Atomic submit returned no data");
-    stage = "parse_receipt";
-    // PostgREST returns a composite RPC result as a one-row array.
-    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    const nested = row?.submit_result ?? row?.submit_menfess_atomic ?? row;
-    const data = typeof nested === "string" ? JSON.parse(nested) : nested;
-    return await reply(data);
+    const encrypted = await encrypt(receiptSecret!, JSON.stringify({ tracking_code: tracking, status: "pending_moderation" }), `${request_id}:${version}`);
+    stage = "rpc_intake";
+    const result = await call("enqueue_moderation_intake", { p_request_id: request_id, p_tracking_code_hash: trackingHash,
+      p_input: { category, recipient: rec, content: normalized }, p_payload_hash: payloadHash,
+      p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version });
+    if (result.kind === "conflict") return fail("IDEMPOTENCY_CONFLICT", 409);
+    if (result.kind === "expired") return fail("RECEIPT_EXPIRED", 409);
+    if (result.kind === "full") return fail("QUEUE_FULL", 503);
+    if (!["accepted", "replay"].includes(result.kind)) throw new ModerationUnavailable();
+    return await reply({ ...result, receipt_payload_hash: result.payload_hash });
   } catch (cause) {
-    if (cleanup) { try { await cleanup(cause instanceof ModerationUnavailable ? cause.retryAfter : 15); } catch { /* Lease expiry also prevents stale completion. */ } }
     logFailure(rid, stage, cause);
-    if (cause instanceof ModerationUnavailable) return json({ error: { code: "MODERATION_UNAVAILABLE", message: "Pemeriksaan pesan sedang tidak tersedia. Pesan belum dikirim.", request_id: rid } }, 503, { ...cors, "retry-after": String(cause.retryAfter) });
+    if (cause instanceof ModerationUnavailable) return json({ error: { code: "MODERATION_UNAVAILABLE", message: "Penyimpanan pesan sedang tidak tersedia. Pesan belum dikirim.", request_id: rid } }, 503, { ...cors, "retry-after": String(cause.retryAfter) });
     return fail("INTERNAL_ERROR", 500);
   }
 });

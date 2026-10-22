@@ -22,7 +22,8 @@ async function readErrorDetail(error) {
 
 function userError(code, status) {
   if (code === "CONTENT_UNSAFE") return "Pesan belum dapat dikirim. Periksa kata-kata, informasi pribadi, atau isi yang dapat menyakiti orang lain.";
-  if (code === "MODERATION_UNAVAILABLE") return "Pemeriksaan pesan sedang tidak tersedia. Pesan belum dikirim. Coba lagi nanti.";
+  if (code === "MODERATION_UNAVAILABLE") return "Penyimpanan pesan sedang tidak tersedia. Pesan belum dikirim. Coba lagi nanti.";
+  if (code === "QUEUE_FULL") return "Antrean pesan sedang penuh. Draf tetap tersimpan; coba kirim lagi nanti.";
   if (code === "VALIDATION_ERROR") return "Periksa kembali kategori, isi pesan, penerima, dan persetujuan.";
   if (code === "IDEMPOTENCY_CONFLICT") return "Request ID ini sudah dipakai untuk isi pesan berbeda. Pertahankan draf atau buat request baru.";
   if (code === "RECEIPT_EXPIRED") return "Batas retry request ini sudah berakhir. Buat pesan baru untuk mengirim ulang.";

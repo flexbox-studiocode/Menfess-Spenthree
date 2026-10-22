@@ -150,7 +150,7 @@ try {
     submitGate = new Promise(resolve => { releaseSubmit = resolve; });
     await send.click();
     await page.locator('.motion-spinner').waitFor();
-    const sending = page.getByRole('button', { name: 'Memeriksa pesan...' });
+    const sending = page.getByRole('button', { name: 'Mengirim pesan...' });
     check(await sending.isDisabled() && await sending.getAttribute('aria-busy') === 'true', reducedMotion + ': pending submit is disabled and busy');
     check((await sending.boundingBox()).width === idleWidth, reducedMotion + ': loading keeps button width');
     const spinner = await page.locator('.motion-spinner').evaluate(element => getComputedStyle(element).animationName);

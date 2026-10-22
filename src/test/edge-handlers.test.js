@@ -61,10 +61,13 @@ beforeEach(() => {
       const receipt = receipts.get(params.p_request_id);
       return { data: receipt ? { ...receipt, payload_hash: receipt.receipt_payload_hash, kind: receipt.receipt_payload_hash === params.p_payload_hash ? "replay" : "conflict" } : { kind: "missing" }, error: null };
     }
+    if (name === "track_moderation_intake") return { data: null, error: null };
     if (name === "reserve_moderation") return { data: { kind: "acquired", lease_token: "test-lease" }, error: null };
     if (name === "reserve_moderation_quota" || name === "finish_moderation") return { data: true, error: null };
     if (name === "release_moderation") return { data: null, error: null };
     const receipt = {
+    kind: "accepted",
+    payload_hash: params.p_payload_hash,
     receipt_payload_hash: params.p_payload_hash,
     encrypted_response: params.p_encrypted_response,
     encryption_key_version: params.p_encryption_key_version,
@@ -143,33 +146,29 @@ describe.each(["submit", "track"])("%s handler common responses", (name) => {
 });
 
 describe("submit receipts", () => {
-  it.each(["reject", "uncertain"])("blocks AI %s before atomic submit", async decision => {
-    fetch.mockResolvedValue(new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ decision, reasons: ["harassment"] }) } }] })));
+  it("accepts immediately without AI even when the provider is down and its key is missing", async () => {
+    delete env.GROQ_API_KEY;
+    fetch.mockRejectedValue(new Error("provider unavailable"));
     const response = await submit(request(validSubmission));
-    expect(response.status).toBe(422);
-    expect(rpc.mock.calls.some(([name]) => name === "submit_menfess_atomic")).toBe(false);
+    expect(response.status).toBe(202);
+    expect((await response.json()).status).toBe("pending_moderation");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(["lookup_submit_receipt", "enqueue_moderation_intake"]);
   });
-  it.each(["quota", "busy", "provider", "stale", "missing_key"])("holds publication on moderation failure: %s", async failure => {
+  it("does not return fake success when the private queue is full", async () => {
     const original = rpc.getMockImplementation();
-    rpc.mockImplementation(async (name, params) => {
-      if (failure === "quota" && name === "reserve_moderation_quota") return { data: false };
-      if (failure === "busy" && name === "reserve_moderation") return { data: { kind: "busy" } };
-      if (failure === "stale" && name === "finish_moderation") return { data: false };
-      return original(name, params);
-    });
-    if (failure === "provider") fetch.mockRejectedValue(new Error("private upstream detail"));
-    if (failure === "missing_key") delete env.GROQ_API_KEY;
+    rpc.mockImplementation((name, params) => name === "enqueue_moderation_intake" ? { data: { kind: "full" } } : original(name, params));
     const response = await submit(request(validSubmission));
     expect(response.status).toBe(503);
-    expect((await response.json()).error.code).toBe("MODERATION_UNAVAILABLE");
-    expect(rpc.mock.calls.some(([name]) => name === "submit_menfess_atomic")).toBe(false);
+    expect((await response.json()).error.code).toBe("QUEUE_FULL");
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("returns 202 with CORS and round-trips the encrypted RPC receipt", async () => {
     const response = await submit(request(validSubmission));
     expect(response.status).toBe(202);
     expectCors(response);
-    expect(await response.json()).toMatchObject({ accepted: true, status: "queued", tracking_code: expect.stringMatching(/^SPT-[A-F0-9]{32}$/) });
-    expect(rpc).toHaveBeenCalledWith("submit_menfess_atomic", expect.objectContaining({ p_request_id: validSubmission.request_id, p_content: validSubmission.content, p_tracking_code_hash: expect.stringMatching(/^v1:[a-f0-9]{64}$/) }));
+    expect(await response.json()).toMatchObject({ accepted: true, status: "pending_moderation", tracking_code: expect.stringMatching(/^SPT-[A-F0-9]{32}$/) });
+    expect(rpc).toHaveBeenCalledWith("enqueue_moderation_intake", expect.objectContaining({ p_request_id: validSubmission.request_id, p_input: { category: validSubmission.category, recipient: null, content: validSubmission.content }, p_tracking_code_hash: expect.stringMatching(/^v1:[a-f0-9]{64}$/) }));
     expect(consoleError).not.toHaveBeenCalled();
   });
   it("returns the same receipt when an identical request is retried", async () => {
@@ -190,7 +189,7 @@ describe("submit receipts", () => {
     const implementation = rpc.getMockImplementation();
     rpc.mockImplementation(async (...args) => {
       const result = await implementation(...args);
-      if (args[0] === "submit_menfess_atomic") result.data[0].expires_at = "2000-01-01T00:00:00Z";
+      if (args[0] === "enqueue_moderation_intake") result.data[0].expires_at = "2000-01-01T00:00:00Z";
       return result;
     });
     const response = await submit(request(validSubmission));
@@ -233,6 +232,14 @@ describe("tracking lookup", () => {
     expect(from).toHaveBeenCalledWith("messages");
     expect(select).toHaveBeenCalledWith("status,published_at,ig_permalink");
     expect(eq).toHaveBeenCalledWith("tracking_code_hash", expect.stringMatching(/^v1:[a-f0-9]{64}$/));
+  });
+  it.each(["pending_moderation", "blocked"])("tracks private intake %s without returning content", async status => {
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+    const original = rpc.getMockImplementation();
+    rpc.mockImplementation((name, params) => name === "track_moderation_intake" ? { data: { status, content: "private" } } : original(name, params));
+    const response = await track(request({ tracking_code: trackingCode }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status, message: expect.any(String), published_at: null, ig_permalink: null });
   });
   it("returns 404 only when the lookup succeeds without a row", async () => {
     maybeSingle.mockResolvedValue({ data: null, error: null });

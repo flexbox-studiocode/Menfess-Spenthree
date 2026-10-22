@@ -20,8 +20,13 @@ Deno.serve(async (req) => {
     const hash = `v1:${await hmac(secret, body.tracking_code)}`;
     const db = createClient(url, serviceKey);
     stage = "lookup_tracking";
-    const { data, error: dbError } = await db.from("messages").select("status,published_at,ig_permalink").eq("tracking_code_hash", hash).maybeSingle();
+    let { data, error: dbError } = await db.from("messages").select("status,published_at,ig_permalink").eq("tracking_code_hash", hash).maybeSingle();
     if (dbError) throw dbError;
+    if (!data) {
+      const pending = await db.rpc("track_moderation_intake", { p_tracking_code_hash: hash });
+      if (pending.error) throw pending.error;
+      data = pending.data;
+    }
     if (!data) return fail("NOT_FOUND", 404);
     const published = data.status === "published";
     return json({ status: data.status, message: published ? "Pesan berhasil dipublikasikan." : "Pesan diterima dan menunggu proses.", published_at: published ? data.published_at : null, ig_permalink: published ? data.ig_permalink : null }, 200, cors);
