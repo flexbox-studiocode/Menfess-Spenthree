@@ -1,4 +1,7 @@
-const productionOrigin = "https://menfess-spenthree-eight.vercel.app";
+const productionOrigins = new Set([
+  "https://menfess-spenthree.vercel.app",
+  "https://menfess-spenthree-eight.vercel.app",
+]);
 const localOrigins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
 
 const configuredOrigins = () => (Deno.env.get("CORS_ORIGIN") ?? "")
@@ -6,7 +9,7 @@ const configuredOrigins = () => (Deno.env.get("CORS_ORIGIN") ?? "")
 
 export const corsForRequest = (request: Request): Record<string, string> => {
   const origin = request.headers.get("origin");
-  const allowed = new Set([productionOrigin, ...configuredOrigins().filter((value) => {
+  const allowed = new Set([...productionOrigins, ...configuredOrigins().filter((value) => {
     try {
       const url = new URL(value);
       return !value.includes("*") && value === url.origin && (url.protocol === "https:" || localOrigins.has(value));

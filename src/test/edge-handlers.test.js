@@ -6,7 +6,11 @@ import { corsForRequest, logFailure } from "../../supabase/functions/_shared/htt
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock("https://esm.sh/@supabase/supabase-js@2", () => ({ createClient: mocks.createClient }));
 
-const production = "https://menfess-spenthree-eight.vercel.app";
+const productionOrigins = [
+  "https://menfess-spenthree.vercel.app",
+  "https://menfess-spenthree-eight.vercel.app",
+];
+const production = productionOrigins[0];
 const configured = "https://school.example";
 const trackingCode = `SPT-${"A".repeat(32)}`;
 const validSubmission = {
@@ -64,7 +68,7 @@ beforeEach(() => {
 });
 
 describe("edge CORS policy", () => {
-  it.each([production, configured, "http://localhost:5173", "http://127.0.0.1:5173"])("allows exact approved origin %s", (origin) => {
+  it.each([...productionOrigins, configured, "http://localhost:5173", "http://127.0.0.1:5173"])("allows exact approved origin %s", (origin) => {
     expectCors(new Response(null, { headers: corsForRequest(request(null, { origin })) }), origin);
   });
   it("always allows production without configuration", () => {
