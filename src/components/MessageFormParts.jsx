@@ -9,9 +9,9 @@ export function PrivacyNotice() {
     <div><h2>Diterbitkan sebagai Anonim</h2><p>Nama tidak ditampilkan kepada siswa lain. Pesan diproses melalui validasi otomatis.</p></div>
   </aside>;
 }
-export function RulesAgreement({ checked, onChange, disabled = false }) {
+export function RulesAgreement({ checked, onChange, disabled = false, invalid = false }) {
   return <label className={styles.checkbox}>
-    <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
+    <input id="rules" name="rules" type="checkbox" checked={checked} onChange={onChange} disabled={disabled} aria-invalid={invalid || undefined} aria-describedby={invalid ? "write-error" : undefined} />
     <span>Saya memastikan pesan tidak berisi hinaan, data pribadi, atau informasi yang mempermalukan orang lain.</span>
   </label>;
 }

@@ -16,7 +16,34 @@ const finishMotion = page => page.evaluate(() => document.getAnimations().forEac
 try {
   for (const reducedMotion of ['no-preference', 'reduce']) {
     const context = await browser.newContext({ reducedMotion, viewport: { width: 412, height: 929 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    await context.addInitScript(() => {
+      window.motionAudit = { transitions: [], reveals: [] };
+      if (document.startViewTransition) {
+        const start = document.startViewTransition.bind(document);
+        document.startViewTransition = update => {
+          const record = { direction: document.documentElement.dataset.messageDirection };
+          window.motionAudit.transitions.push(record);
+          const transition = start(update);
+          transition.ready.then(() => {
+            record.enter = getComputedStyle(document.documentElement, '::view-transition-new(sagara-page)').animationName;
+            record.shared = getComputedStyle(document.documentElement, '::view-transition-group(sagara-message)').animationName;
+            record.ready = true;
+          }, error => { record.error = error.message; record.ready = true; });
+          return transition;
+        };
+      }
+      const animate = Element.prototype.animate;
+      Element.prototype.animate = function (...args) {
+        const animation = animate.apply(this, args);
+        if (location.pathname === '/guide' && this.matches('ol > li')) {
+          window.motionAudit.reveals.push({ index: [...this.parentElement.children].indexOf(this), animation });
+          if (window.pauseReveal) animation.pause();
+        }
+        return animation;
+      };
+    });
     const page = await context.newPage();
+    page.setDefaultTimeout(15000);
     page.on('pageerror', error => errors.push(error.message));
     const requests = [];
     let failSubmit = true;
@@ -56,12 +83,61 @@ try {
     check(reducedMotion === 'reduce' ? enters.length === 0 : enters.includes('sagara-enter'), reducedMotion + ': route entry respects motion preference');
     await finishMotion(page);
     check(await page.evaluate(() => document.activeElement.id === 'main'), reducedMotion + ': route focus is preserved');
+    await page.setViewportSize({ width: 412, height: 600 });
+    await page.getByLabel('Untuk (opsional)').fill('a'.repeat(81));
+    await page.getByRole('button', { name: 'Periksa pesan' }).click();
+    await page.waitForFunction(() => {
+      const field = document.querySelector('#recipient');
+      const rect = field.getBoundingClientRect();
+      return document.activeElement === field && rect.top >= 64 && rect.bottom < innerHeight - 67;
+    });
+    check(await page.getByLabel('Untuk (opsional)').getAttribute('aria-invalid') === 'true', reducedMotion + ': invalid recipient is focused, highlighted and scrolled above navigation');
+    await page.getByLabel('Untuk (opsional)').fill('');
+    await page.getByRole('button', { name: 'Periksa pesan' }).click();
+    check(await page.evaluate(() => document.activeElement.id === 'content'), reducedMotion + ': invalid content receives focus');
     await page.getByLabel('Isi pesan', { exact: true }).fill('Pesan pengujian animasi tanpa publikasi produksi.');
+    await page.getByRole('button', { name: 'Periksa pesan' }).click();
+    check(await page.evaluate(() => document.activeElement.id === 'rules'), reducedMotion + ': missing consent receives focus');
     await page.getByRole('checkbox').check();
+    await page.setViewportSize({ width: 412, height: 929 });
     await page.getByRole('button', { name: 'Periksa pesan' }).click();
     await page.waitForURL('**/review');
+    if (reducedMotion === 'no-preference') {
+      await page.waitForFunction(() => window.motionAudit.transitions[0]?.ready);
+      const transition = await page.evaluate(() => window.motionAudit.transitions[0]);
+      check(!transition.error && transition.enter === 'sagara-forward' && transition.shared.includes('sagara-message'), 'Native forward transition snapshots both message and page');
+      await page.evaluate(() => document.getAnimations().forEach(animation => { animation.pause(); animation.currentTime = 120; }));
+      await page.screenshot({ path: path.join(output, 'message-transition.png') });
+    } else {
+      check(await page.evaluate(() => window.motionAudit.transitions.length) === 0, 'Reduced motion skips native snapshots entirely');
+    }
     const progress = await page.locator('[data-step="review"]').evaluate(element => getComputedStyle(element.children[2], '::after').animationName);
     check(reducedMotion === 'reduce' ? progress === 'none' : progress === 'sagara-progress', reducedMotion + ': review progress uses shared motion');
+    await finishMotion(page);
+    await page.waitForFunction(() => !document.documentElement.dataset.messageDirection);
+    check(await page.evaluate(() => document.activeElement.id === 'main'), reducedMotion + ': message transition preserves route focus');
+    if (reducedMotion === 'no-preference') {
+      check(await page.locator('section[data-message-transition]').evaluate(element => getComputedStyle(element).animationName) === 'none', 'Native transition does not replay a second page entry after completion');
+    }
+    await page.getByRole('button', { name: 'Ubah Pesan' }).click();
+    await page.waitForURL('**/write');
+    if (reducedMotion === 'no-preference') {
+      await page.waitForFunction(() => window.motionAudit.transitions[1]?.ready);
+      check(await page.evaluate(() => window.motionAudit.transitions[1].enter) === 'sagara-backward', 'Edit reverses the native page direction');
+    }
+    check(await page.getByLabel('Isi pesan', { exact: true }).inputValue() === 'Pesan pengujian animasi tanpa publikasi produksi.', reducedMotion + ': editing retains the original message');
+    await finishMotion(page);
+    await page.evaluate(() => { window.savedTransition = document.startViewTransition; document.startViewTransition = undefined; });
+    await page.getByRole('button', { name: 'Periksa pesan' }).click();
+    await page.waitForURL('**/review');
+    check(await page.locator('[data-message-direction="forward"]').evaluate(element => getComputedStyle(element).animationName) === (reducedMotion === 'reduce' ? 'none' : 'sagara-forward'), reducedMotion + ': unsupported browsers retain directional fallback and draft flow');
+    await finishMotion(page);
+    await page.getByRole('link', { name: 'Ubah pesan', exact: true }).click();
+    await page.waitForURL('**/write');
+    check(await page.getByRole('checkbox').isChecked(), reducedMotion + ': back link preserves agreement');
+    await page.evaluate(() => { document.startViewTransition = window.savedTransition; });
+    await page.getByRole('button', { name: 'Periksa pesan' }).click();
+    await page.waitForURL('**/review');
     await finishMotion(page);
 
     const send = page.getByRole('button', { name: 'Kirim Menfess' });
@@ -84,6 +160,13 @@ try {
     await page.getByRole('button', { name: 'Kirim Menfess' }).click();
     await page.waitForURL('**/status');
     await page.getByText('Menfess berhasil dikirim').waitFor();
+    const receiptMotion = await page.locator('.motion-receipt').evaluate(element => ({
+      envelope: getComputedStyle(element.querySelector('.motion-envelope')).display,
+      flap: getComputedStyle(element.querySelector('.motion-envelope-flap')).animationName,
+      check: getComputedStyle(element.querySelector('.motion-receipt-check')).animationName,
+      ring: getComputedStyle(element.parentElement.querySelector('li'), '::after').animationName,
+    }));
+    check(reducedMotion === 'reduce' ? receiptMotion.envelope === 'none' && receiptMotion.check === 'none' && receiptMotion.ring === 'none' : receiptMotion.flap === 'sagara-envelope-close' && receiptMotion.check === 'sagara-receipt-check' && receiptMotion.ring === 'sagara-status-ring', reducedMotion + ': envelope/check and one-shot status ring follow actual success');
     assert.deepEqual(requests[0].payload, requests[1].payload);
     check(await page.evaluate(() => sessionStorage.getItem('menfess-spenthree-draft')) === null, reducedMotion + ': identical retry succeeds and clears draft');
     await page.getByRole('button', { name: 'Salin kode' }).click();
@@ -101,6 +184,38 @@ try {
     await page.getByRole('link', { name: 'Buka Instagram' }).waitFor();
     check(await page.getByText('Menfess berhasil dikirim').count() === 0, reducedMotion + ': tracking does not replay submission receipt');
     check(!page.url().includes(code), reducedMotion + ': tracking code remains absent from URL');
+    const help = page.getByRole('link', { name: 'Lihat panduan menfess dan kode pelacakan' });
+    await page.getByRole('button', { name: 'Periksa status' }).focus();
+    await page.keyboard.press('Tab');
+    await page.waitForFunction(() => getComputedStyle(document.activeElement).backgroundSize === '100% 1px');
+    check(await help.evaluate(element => element.matches(':focus-visible')), reducedMotion + ': underline also responds to keyboard focus');
+
+    await page.setViewportSize({ width: 412, height: 600 });
+    await nav.getByRole('link', { name: 'Panduan', exact: true }).click();
+    await page.waitForURL('**/guide');
+    if (reducedMotion === 'no-preference') {
+      for (let index = 0; index < 4; index++) {
+        await page.locator('main ol > li').nth(index).evaluate(element => element.scrollIntoView({ block: 'center' }));
+        await page.waitForFunction(index => window.motionAudit.reveals.some(record => record.index === index), index);
+      }
+      await finishMotion(page);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.getByRole('heading', { name: /Boleh cerita, tapi jaga perasaan/ }).scrollIntoViewIfNeeded();
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(120);
+      check(await page.evaluate(() => window.motionAudit.reveals.length) === 4, 'Guide reveals each rule once when scrolled into view');
+      await nav.getByRole('link', { name: 'Status', exact: true }).click();
+      await page.evaluate(() => { window.pauseReveal = true; });
+      await nav.getByRole('link', { name: 'Panduan', exact: true }).click();
+      await page.waitForFunction(() => window.motionAudit.reveals.length > 4);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.waitForFunction(() => document.getAnimations().length === 0);
+      check(await page.evaluate(() => window.motionAudit.reveals.slice(4).every(({ animation }) => animation.playState === 'idle')), 'Changing preference to reduce cancels active guide reveals');
+      await page.emulateMedia({ reducedMotion });
+    } else {
+      check(await page.evaluate(() => window.motionAudit.reveals.length) === 0, 'Reduced motion leaves guide content visible without reveal animations');
+    }
+    await page.setViewportSize({ width: 412, height: 929 });
 
     await nav.getByRole('link', { name: 'Beranda', exact: true }).click();
     await finishMotion(page);

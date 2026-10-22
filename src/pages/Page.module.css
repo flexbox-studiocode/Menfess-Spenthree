@@ -21,7 +21,8 @@
 .field input { height: 40px; font-size: 14px; font-weight: 500; letter-spacing: .7px; }
 .field input::placeholder, .field textarea::placeholder { color: #667185cc; opacity: 1; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #7f83e8; box-shadow: 0 0 0 3px #7f83e81a; }
-.field textarea[aria-invalid="true"] { border-color: #e393a1; }
+.field [aria-invalid="true"], .checkbox input[aria-invalid="true"] { border-color: #e393a1; box-shadow: 0 0 0 3px #e393a11a; }
+.field input, .field textarea, .checkbox input { scroll-margin-block: 84px; }
 .field select { appearance: none; height: 40px; padding: 8px 38px 8px 12px; font-size: 16px; background-image: url('/design/caret.svg'); background-repeat: no-repeat; background-position: right 2px center; }
 .field textarea { height: 139px; min-height: 139px; resize: vertical; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: .7px; }
 .writeForm { display: grid; gap: 0; }
@@ -110,7 +111,10 @@
 .emptyIcon img { display: block; }
 .emptyCta { margin: 18px 0 16px; font-size: 12px; min-height: 44px; }
 @media (prefers-reduced-motion: no-preference) {
-  .page { animation: var(--motion-enter); }
+  .page { animation: var(--motion-enter); view-transition-name: sagara-page; }
+  .page[data-message-direction="forward"] { animation: var(--motion-forward); }
+  .page[data-message-direction="backward"] { animation: var(--motion-backward); }
+  .page[data-message-transition] { animation: none; }
   .button, .heroButton { transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-duration), filter var(--motion-fast); }
   .button:active:not(:disabled), .heroButton:active { transform: scale(.98); }
   .button img, .heroButton img { transition: transform var(--motion-duration) var(--motion-ease); }

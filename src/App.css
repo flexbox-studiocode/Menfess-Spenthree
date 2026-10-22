@@ -11,13 +11,40 @@
 .motion-label { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 .motion-receipt { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; color: #c2e9d3; font-size: 12px; font-weight: 600; }
 .motion-receipt img { display: block; flex-shrink: 0; }
+.motion-receipt-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; }
+.motion-receipt-icon > * { grid-area: 1 / 1; width: 36px; height: 36px; }
+.motion-envelope { display: none; }
+.motion-envelope-flap { transform-box: fill-box; transform-origin: 50% 100%; }
+.motion-link { text-decoration: none; background: linear-gradient(currentColor, currentColor) left bottom / 0 1px no-repeat; }
+.motion-link:hover, .motion-link:focus-visible { background-size: 100% 1px; }
 @keyframes sagara-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sagara-forward { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes sagara-backward { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes sagara-exit-forward { to { opacity: 0; transform: translateX(-12px); } }
+@keyframes sagara-exit-backward { to { opacity: 0; transform: translateX(12px); } }
+@keyframes sagara-status-ring { from { opacity: .7; transform: scale(1); } to { opacity: 0; transform: scale(3); } }
+@keyframes sagara-envelope-close { to { transform: rotateX(180deg); } }
+@keyframes sagara-envelope-away { 55% { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.8); } }
+@keyframes sagara-receipt-check { from, 60% { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
 @keyframes sagara-pop { from { opacity: .6; transform: scale(.88); } 65% { transform: scale(1.04); } to { opacity: 1; transform: scale(1); } }
 @keyframes sagara-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes sagara-spin { to { transform: rotate(1turn); } }
 @media (prefers-reduced-motion: no-preference) {
+  :root { --motion-forward: sagara-forward 220ms var(--motion-ease) both; --motion-backward: sagara-backward 220ms var(--motion-ease) both; --motion-status-ring: sagara-status-ring 480ms ease-out both; }
+  .motion-message { view-transition-name: sagara-message; }
+  .motion-link { transition: background-size var(--motion-duration) var(--motion-ease); }
   .motion-spinner { animation: sagara-spin 800ms linear infinite; }
   .motion-label { animation: var(--motion-feedback); }
-  .motion-receipt img, .motion-copy-success { animation: var(--motion-pop); }
+  .motion-copy-success { animation: var(--motion-pop); }
+  .motion-envelope { display: block; animation: sagara-envelope-away 420ms var(--motion-ease) both; }
+  .motion-envelope-flap { animation: sagara-envelope-close 220ms var(--motion-ease) both; }
+  .motion-receipt-check { animation: sagara-receipt-check 500ms var(--motion-ease) both; }
+  ::view-transition-group(*) { animation-duration: 260ms; animation-timing-function: var(--motion-ease); }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  ::view-transition-old(sagara-page) { animation: sagara-exit-forward 220ms var(--motion-ease) both; }
+  ::view-transition-new(sagara-page) { animation: var(--motion-forward); }
+  :root[data-message-direction="backward"]::view-transition-old(sagara-page) { animation-name: sagara-exit-backward; }
+  :root[data-message-direction="backward"]::view-transition-new(sagara-page) { animation: var(--motion-backward); }
 }
 @media (prefers-reduced-motion: reduce) { *, ::before, ::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; } }

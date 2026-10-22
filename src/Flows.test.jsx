@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import App from "./App.jsx";
 import { DRAFT_KEY, readDraft, saveDraft } from "./services/index.js";
 import { getSupabaseClient } from "./lib/supabase.js";
@@ -9,13 +9,39 @@ import { getSupabaseClient } from "./lib/supabase.js";
 vi.mock("./lib/supabase.js", () => ({ getSupabaseClient: vi.fn() }));
 const invoke = vi.fn();
 const draft = { category: "aspirasi", recipient: "OSIS Spenthree", content: "Tolong tambahkan tempat membaca di taman sekolah.", rules_accepted: true };
-const renderRoute = path => render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
+const renderRoute = path => render(<MemoryRouter initialEntries={[path]} useTransitions={false}><App /></MemoryRouter>);
+afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => {
   sessionStorage.clear(); invoke.mockReset();
   getSupabaseClient.mockReturnValue({ functions: { invoke } });
 });
 
 describe("preserved menfess integration", () => {
+  it.each([false, true])("focuses the first invalid field with reduced motion = %s", async reduced => {
+    const scrollIntoView = vi.fn();
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: !reduced })));
+    const user = userEvent.setup(); renderRoute("/write");
+    const recipient = screen.getByLabelText(/Untuk/);
+    const content = screen.getByLabelText("Isi pesan");
+    const agreement = screen.getByRole("checkbox");
+    for (const field of [recipient, content, agreement]) field.scrollIntoView = scrollIntoView;
+    await user.click(recipient); await user.paste("a".repeat(81));
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(recipient).toHaveFocus();
+    expect(recipient).toHaveAttribute("aria-invalid", "true");
+    expect(recipient).toHaveAccessibleDescription("Penerima maksimal 80 karakter.");
+    await user.clear(recipient);
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(content).toHaveFocus();
+    expect(content).toHaveAccessibleDescription(expect.stringContaining("10–500"));
+    await user.type(content, draft.content);
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(agreement).toHaveFocus();
+    expect(agreement).toHaveAttribute("aria-invalid", "true");
+    expect(scrollIntoView).toHaveBeenCalledTimes(3);
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    expect(invoke).not.toHaveBeenCalled();
+  });
   it("validates, saves a draft, and opens review without sending", async () => {
     const user = userEvent.setup(); renderRoute("/write");
     await user.click(screen.getByRole("button", { name: "Periksa pesan" }));

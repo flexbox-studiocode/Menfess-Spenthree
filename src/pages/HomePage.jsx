@@ -20,7 +20,7 @@ export default function HomePage() {
       <div className={styles.empty} role="status"><span className={styles.emptyIcon} aria-hidden="true"><img src="/design/write.svg" alt="" /></span><h3>Linimasa belum tersedia</h3>
         <p key={category} className={styles.categoryDescription}>{category === "Semua" ? "Pesan yang telah diterbitkan akan muncul di sini setelah linimasa tersedia." : "Pesan kategori " + category.toLowerCase() + " akan muncul di sini setelah linimasa tersedia."}</p>
         <Link className={styles.button + " " + styles.emptyCta} to="/write">Tulis menfess<img src="/design/arrow.svg" alt="" /></Link>
-        <Link to="/status">Periksa status pesanmu</Link>
+        <Link className="motion-link" to="/status">Periksa status pesanmu</Link>
       </div>
     </section>
   </Page>;

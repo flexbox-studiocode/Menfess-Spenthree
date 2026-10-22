@@ -73,5 +73,6 @@
   .agreement input:checked { animation: var(--motion-pop); }
   .error { animation: var(--motion-feedback); }
   .result { animation: var(--motion-enter); }
+  .timeline li:first-child::after { content: ''; position: absolute; left: -33px; top: 4px; width: 7px; height: 7px; border: 1px solid #9a9cc6; border-radius: 50%; animation: var(--motion-status-ring); pointer-events: none; }
 }
 @media (hover: hover) and (pointer: fine) { .button:hover:not(:disabled), .copy:hover { background-color: #404496; } }
