@@ -1,0 +1,40 @@
+-- Distinguish a newly inserted message from a retained, expired request.
+-- Keep the expired-receipt guard and all existing grants/RLS unchanged.
+begin;
+create or replace function public.submit_menfess_atomic(
+  p_request_id uuid, p_tracking_code_hash text, p_category text, p_recipient text,
+  p_content text, p_payload_hash text, p_encrypted_response bytea,
+  p_encryption_key_version text
+) returns public.submit_result
+language plpgsql security invoker set search_path = '' as $$
+declare
+  r public.submit_result;
+  message_inserted boolean;
+begin
+  insert into public.messages(request_id, tracking_code_hash, category, recipient, content)
+  values (p_request_id, p_tracking_code_hash, p_category, p_recipient, p_content)
+  on conflict (request_id) do nothing;
+  message_inserted := found;
+
+  -- Only a pre-existing message without a receipt is an expired tombstone.
+  -- ON CONFLICT waits for concurrent inserts before checking their receipt.
+  if not message_inserted
+     and not exists (select 1 from public.idempotency_receipts where request_id = p_request_id) then
+    select m.request_id, m.tracking_code_hash, null::text, null::bytea, null::text, null::timestamptz, false
+      into r from public.messages m where m.request_id = p_request_id;
+    return r;
+  end if;
+
+  insert into public.idempotency_receipts(request_id, payload_hash, encrypted_response, encryption_key_version)
+  values (p_request_id, p_payload_hash, p_encrypted_response, p_encryption_key_version)
+  on conflict (request_id) do nothing;
+
+  select m.request_id, m.tracking_code_hash, i.payload_hash, i.encrypted_response,
+         i.encryption_key_version, i.expires_at, message_inserted
+    into r from public.messages m join public.idempotency_receipts i using (request_id)
+   where m.request_id = p_request_id;
+  if not found then raise exception 'submit result unavailable' using errcode = '40001'; end if;
+  return r;
+end;
+$$;
+commit;
