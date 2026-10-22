@@ -6,7 +6,8 @@ import App from "./App.jsx";
 import { DRAFT_KEY, readDraft, saveDraft } from "./services/index.js";
 import { getSupabaseClient } from "./lib/supabase.js";
 
-vi.mock("./lib/supabase.js", () => ({ getSupabaseClient: vi.fn(), readSupabaseConfig: vi.fn(() => ({ url: "https://example.supabase.co", key: "sb_publishable_test" })) }));
+vi.mock("./lib/supabase.js", () => ({ getSupabaseClient: vi.fn() }));
+vi.mock("./lib/supabaseConfig.js", () => ({ readSupabaseConfig: vi.fn(() => ({ url: "https://example.supabase.co", key: "sb_publishable_test" })) }));
 const invoke = vi.fn();
 const draft = { category: "aspirasi", recipient: "OSIS Spenthree", content: "Tolong tambahkan tempat membaca di taman sekolah.", rules_accepted: true };
 const renderRoute = path => render(<MemoryRouter initialEntries={[path]} useTransitions={false}><App /></MemoryRouter>);

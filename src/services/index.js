@@ -1,4 +1,4 @@
-import { getSupabaseClient, readSupabaseConfig } from "../lib/supabase.js";
+import { readSupabaseConfig } from "../lib/supabaseConfig.js";
 
 const MAX_PAYLOAD_BYTES = 16 * 1024;
 
@@ -32,6 +32,7 @@ function userError(code, status) {
 }
 
 async function invoke(name, body, timeoutMs = 15000) {
+  const { getSupabaseClient } = await import("../lib/supabase.js");
   const client = getSupabaseClient();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);

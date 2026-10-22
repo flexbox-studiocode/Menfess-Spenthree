@@ -4,7 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
-  { ignores: ["dist/**", "coverage/**", "supabase/**"] },
+  { ignores: ["dist/**", "artifacts/**", "coverage/**", "supabase/**"] },
   {
     files: ["**/*.{js,jsx}"],
     ...js.configs.recommended,

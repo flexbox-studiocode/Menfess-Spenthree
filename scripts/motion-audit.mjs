@@ -12,6 +12,7 @@ const checks = [];
 const errors = [];
 const check = (condition, message) => { assert(condition, message); checks.push(message); };
 const finishMotion = page => page.evaluate(() => document.getAnimations().forEach(animation => { if (animation.effect.getTiming().iterations !== Infinity) animation.finish(); }));
+const backendLoaded = page => page.evaluate(() => performance.getEntriesByType('resource').some(resource => /\/supabase(?:-[^/]+)?\.js$/.test(new URL(resource.name).pathname)));
 
 try {
   for (const reducedMotion of ['no-preference', 'reduce']) {
@@ -50,7 +51,7 @@ try {
     let submitGate = Promise.resolve();
     let trackGate = Promise.resolve();
     const code = 'SPT-0123456789ABCDEF0123456789ABCDEF';
-    await context.route('**/src/lib/supabase.js*', async route => {
+    await context.route('**/src/lib/supabaseConfig.js*', async route => {
       const response = await route.fetch();
       const original = await response.text();
       const body = original.replace('const url = env.VITE_SUPABASE_URL?.trim();', 'const url = "https://motion-audit.invalid";')
@@ -63,8 +64,10 @@ try {
       const request = route.request();
       const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'content-type': 'application/json' };
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 200, headers });
+      const endpoint = new URL(request.url()).pathname.split('/').pop();
+      if (endpoint === 'public-feed' && request.method() === 'GET') return route.fulfill({ status: 200, headers, body: JSON.stringify({ data: [], next_cursor: null }) });
+      if (endpoint === 'public-menfess' && request.method() === 'GET') return route.fulfill({ status: 404, headers, body: JSON.stringify({ error: { code: 'NOT_FOUND' } }) });
       assert.equal(request.method(), 'POST');
-      const endpoint = request.url().split('/').pop();
       requests.push({ endpoint, payload: request.postDataJSON() });
       if (endpoint === 'submit-menfess') {
         await submitGate;
@@ -77,6 +80,7 @@ try {
     });
     await page.goto(baseURL, { waitUntil: 'networkidle' });
     await page.evaluate(() => document.fonts.ready);
+    check(!await backendLoaded(page), reducedMotion + ': home does not download the backend SDK');
     const nav = page.getByRole('navigation', { name: 'Navigasi utama' });
     await nav.getByRole('link', { name: 'Tulis', exact: true }).click();
     const enters = await page.evaluate(() => document.getAnimations().map(animation => animation.animationName));
@@ -154,6 +158,7 @@ try {
     check(await page.getByText('Menfess berhasil dikirim').count() === 0, reducedMotion + ': no premature success');
     releaseSubmit();
     await page.getByRole('alert').waitFor();
+    check(await backendLoaded(page), reducedMotion + ': submit loads the backend SDK on demand');
     const retained = await page.evaluate(() => JSON.parse(sessionStorage.getItem('menfess-spenthree-draft')));
     check(Boolean(retained.request_id), reducedMotion + ': failed submit retains draft and request ID');
     failSubmit = false;
