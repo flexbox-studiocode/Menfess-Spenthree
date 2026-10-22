@@ -30,7 +30,7 @@ function expectCors(response, origin = configured) {
   expect(response.headers.get("access-control-allow-origin")).toBe(origin);
   expect(response.headers.get("vary")).toBe("Origin");
   expect(response.headers.get("cache-control")).toBe("no-store");
-  expect(response.headers.get("access-control-allow-methods")).toBe("POST, OPTIONS");
+  expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
   expect(response.headers.get("access-control-allow-headers")).toBe("authorization, x-client-info, apikey, content-type");
 }
 

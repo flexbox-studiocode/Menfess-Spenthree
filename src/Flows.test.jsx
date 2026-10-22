@@ -6,7 +6,7 @@ import App from "./App.jsx";
 import { DRAFT_KEY, readDraft, saveDraft } from "./services/index.js";
 import { getSupabaseClient } from "./lib/supabase.js";
 
-vi.mock("./lib/supabase.js", () => ({ getSupabaseClient: vi.fn() }));
+vi.mock("./lib/supabase.js", () => ({ getSupabaseClient: vi.fn(), readSupabaseConfig: vi.fn(() => ({ url: "https://example.supabase.co", key: "sb_publishable_test" })) }));
 const invoke = vi.fn();
 const draft = { category: "aspirasi", recipient: "OSIS Spenthree", content: "Tolong tambahkan tempat membaca di taman sekolah.", rules_accepted: true };
 const renderRoute = path => render(<MemoryRouter initialEntries={[path]} useTransitions={false}><App /></MemoryRouter>);
@@ -162,11 +162,15 @@ describe("preserved menfess integration", () => {
     expect(readDraft().content).toBe("😀".repeat(10));
     expect(invoke).not.toHaveBeenCalled();
   });
-  it("filters unavailable feed without fake posts or likes", async () => {
-    const user = userEvent.setup(); renderRoute("/");
+  it("loads and filters an empty published feed without direct table access", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [], next_cursor: null }) });
+    vi.stubGlobal("fetch", fetchMock); renderRoute("/");
+    expect(await screen.findByText("Belum ada menfess yang diterbitkan")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Aspirasi", exact: true }));
     expect(screen.getByRole("button", { name: "Aspirasi", exact: true })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/Linimasa belum tersedia/)).toBeInTheDocument();
+    await screen.findByText("Belum ada menfess yang diterbitkan");
+    expect(fetchMock.mock.calls.at(-1)[0].searchParams.get("category")).toBe("aspirasi");
     expect(invoke).not.toHaveBeenCalled();
     await user.click(within(screen.getByRole("status")).getByRole("link", { name: "Tulis menfess" }));
     expect(screen.getByRole("heading", { name: "Tulis menfess" })).toBeInTheDocument();

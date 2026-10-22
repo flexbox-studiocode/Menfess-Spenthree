@@ -110,6 +110,19 @@
 .emptyIcon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 16px; border-radius: 12px; background: var(--accent-soft); }
 .emptyIcon img { display: block; }
 .emptyCta { margin: 18px 0 16px; font-size: 12px; min-height: 44px; }
+.feedState { margin-top: 17px; padding: 24px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--muted); font-size: 12px; line-height: 19px; }
+.feedState h2 { margin: 0 0 10px; color: var(--ink); font-size: 15px; }
+.feedState p { margin: 0 0 16px; overflow-wrap: anywhere; }
+.feedList { display: grid; gap: 14px; margin-top: 17px; }
+.feedCard { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.cardMeta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; line-height: 15px; }
+.cardMeta span { padding: 3px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--link); font-weight: 700; text-transform: capitalize; }
+.recipient { margin: 14px 0 0; color: var(--link); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.feedContent { margin: 14px 0; color: var(--ink); font-size: 13px; line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.cardLinks { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; }
+.cardLinks a, .detailCard > a { color: var(--link); overflow-wrap: anywhere; }
+.loadMore { margin-top: 16px; }
+.detailCard { margin-top: 20px; }
 @media (prefers-reduced-motion: no-preference) {
   .page { animation: var(--motion-enter); view-transition-name: sagara-page; }
   .page[data-message-direction="forward"] { animation: var(--motion-forward); }

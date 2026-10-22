@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "../lib/supabase.js";
+import { getSupabaseClient, readSupabaseConfig } from "../lib/supabase.js";
 
 const MAX_PAYLOAD_BYTES = 16 * 1024;
 
@@ -56,6 +56,45 @@ async function invoke(name, body, timeoutMs = 15000) {
 
 export function submitMenfess(payload) { return invoke("submit-menfess", payload, 20000); }
 export function trackMenfess(trackingCode) { return invoke("track-menfess", { tracking_code: trackingCode }); }
+
+async function fetchPublicFunction(name, params, signal) {
+  const { url, key } = readSupabaseConfig();
+  const endpoint = new URL(`/functions/v1/${name}`, url);
+  Object.entries(params).forEach(([field, value]) => {
+    if (value !== undefined && value !== null && value !== "") endpoint.searchParams.set(field, String(value));
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const response = await fetch(endpoint, { method: "GET", headers: { apikey: key, Authorization: `Bearer ${key}` }, signal: controller.signal });
+    let body;
+    try { body = await response.json(); } catch { throw new Error("Respons backend tidak valid."); }
+    if (!response.ok) {
+      const err = new Error(body?.error?.code === "NOT_FOUND" ? "Menfess tidak ditemukan atau belum diterbitkan." : userError(body?.error?.code, response.status));
+      err.code = body?.error?.code;
+      err.status = response.status;
+      throw err;
+    }
+    return assertResponseShape(body);
+  } catch (error) {
+    if (signal?.aborted) throw new DOMException("Permintaan dibatalkan.", "AbortError");
+    if (controller.signal.aborted) throw new Error("Permintaan terlalu lama. Coba lagi.");
+    if (error instanceof TypeError || error?.message?.toLowerCase().includes("failed to fetch")) throw new Error("Koneksi atau CORS gagal. Coba lagi.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
+export function fetchPublicFeed({ category, limit = 20, cursor, signal } = {}) {
+  return fetchPublicFunction("public-feed", { category, limit, cursor }, signal);
+}
+export function fetchPublicMenfess(publicId, signal) {
+  return fetchPublicFunction("public-menfess", { id: publicId }, signal);
+}
 
 export const DRAFT_KEY = "menfess-spenthree-draft";
 export function createRequestId() { return crypto.randomUUID(); }

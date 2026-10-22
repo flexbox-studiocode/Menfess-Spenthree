@@ -419,3 +419,9 @@ verify_jwt = false
 
 [functions.track-menfess]
 verify_jwt = false
+
+[functions.public-feed]
+verify_jwt = false
+
+[functions.public-menfess]
+verify_jwt = false

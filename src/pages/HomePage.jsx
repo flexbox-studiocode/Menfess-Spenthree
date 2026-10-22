@@ -1,27 +1,46 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Page from "./Page.jsx";
 import styles from "./Page.module.css";
-const categories = ["Semua", "Menfess", "Aspirasi", "Curhat", "Apresiasi"];
+import { fetchPublicFeed } from "../services/index.js";
+
+const categories = [{ label: "Semua", slug: undefined }, { label: "Menfess", slug: "menfess" }, { label: "Aspirasi", slug: "aspirasi" }, { label: "Curhat", slug: "curhat" }, { label: "Apresiasi", slug: "apresiasi" }];
+const dateFormatter = new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short" });
+const validInstagram = (value) => { try { const url = new URL(value); return url.protocol === "https:" && (url.hostname === "instagram.com" || url.hostname.endsWith(".instagram.com")); } catch { return false; } };
+
 export default function HomePage() {
-  const [category, setCategory] = useState("Semua");
+  const [active, setActive] = useState(categories[0]);
+  const [feed, setFeed] = useState({ status: "loading", items: [], cursor: null, error: "" });
+  const request = useRef(0);
+  const activeController = useRef(null);
+  const load = useCallback(async ({ append = false, cursor } = {}) => {
+    activeController.current?.abort();
+    const id = ++request.current;
+    const controller = new AbortController();
+    activeController.current = controller;
+    setFeed((old) => ({ ...old, status: append ? "more" : "loading", error: "", ...(append ? {} : { items: [], cursor: null }) }));
+    try {
+      const result = await fetchPublicFeed({ category: active.slug, limit: 20, cursor, signal: controller.signal });
+      if (id !== request.current) return;
+      setFeed((old) => ({ status: "success", items: append ? [...new Map([...old.items, ...result.data].map((item) => [item.public_id, item])).values()] : result.data, cursor: result.next_cursor, error: "" }));
+    } catch (error) {
+      if (id !== request.current || error?.name === "AbortError") return;
+      setFeed((old) => ({ ...old, status: "error", error: error.message || "Linimasa gagal dimuat." }));
+    }
+  }, [active.slug]);
+  useEffect(() => { load(); return () => { request.current += 1; activeController.current?.abort(); }; }, [load]);
+
   return <Page home title="Menfess Spenthree" description="Pesan dan cerita dari warga sekolah.">
-    <section className={styles.hero}>
-      <h2>Ada yang ingin<br />kamu sampaikan?</h2>
-      <p>Titip pesan, cerita hari ini, atau beri apresiasi. Kamu juga bisa menyampaikan aspirasi ke OSIS.</p>
-      <Link className={styles.heroButton} to="/write">Tulis menfess<img src="/design/write.svg" alt="" /></Link>
-    </section>
+    <section className={styles.hero}><h2>Ada yang ingin<br />kamu sampaikan?</h2><p>Titip pesan, cerita hari ini, atau beri apresiasi. Kamu juga bisa menyampaikan aspirasi ke OSIS.</p><Link className={styles.heroButton} to="/write">Tulis menfess<img src="/design/write.svg" alt="" /></Link></section>
     <p className={styles.security}><img src="/design/security.svg" alt="" /><span>Nama pengirim tidak ditampilkan. Semua menfess divalidasi sebelum tayang.</span></p>
     <section className={styles.feed} aria-labelledby="feed-heading">
       <div className={styles.feedHeading}><h2 id="feed-heading">Linimasa</h2><span>Terbaru</span></div>
-      <div className={styles.categories} data-active={categories.indexOf(category)} role="group" aria-label="Kategori linimasa">
-        {categories.map(label => <button key={label} type="button" aria-pressed={category === label} onClick={() => setCategory(label)}>{label}</button>)}
-      </div>
-      <div className={styles.empty} role="status"><span className={styles.emptyIcon} aria-hidden="true"><img src="/design/write.svg" alt="" /></span><h3>Linimasa belum tersedia</h3>
-        <p key={category} className={styles.categoryDescription}>{category === "Semua" ? "Pesan yang telah diterbitkan akan muncul di sini setelah linimasa tersedia." : "Pesan kategori " + category.toLowerCase() + " akan muncul di sini setelah linimasa tersedia."}</p>
-        <Link className={styles.button + " " + styles.emptyCta} to="/write">Tulis menfess<img src="/design/arrow.svg" alt="" /></Link>
-        <Link className="motion-link" to="/status">Periksa status pesanmu</Link>
-      </div>
+      <div className={styles.categories} data-active={categories.indexOf(active)} role="group" aria-label="Kategori linimasa">{categories.map((item) => <button key={item.label} type="button" aria-pressed={active.slug === item.slug} onClick={() => setActive(item)}>{item.label}</button>)}</div>
+      {feed.status === "loading" && <div className={styles.feedState} role="status" aria-live="polite">Memuat linimasa…</div>}
+      {feed.status === "error" && <div className={styles.feedState} role="alert"><p>{feed.error}</p><button className={styles.button} type="button" onClick={() => load()}>Coba lagi</button></div>}
+      {feed.status === "success" && feed.items.length === 0 && <div className={styles.empty} role="status"><span className={styles.emptyIcon} aria-hidden="true"><img src="/design/write.svg" alt="" /></span><h3>Belum ada menfess yang diterbitkan</h3><p>Pesan akan muncul di sini setelah berhasil dipublikasikan.</p><Link className={`${styles.button} ${styles.emptyCta}`} to="/write">Tulis menfess<img src="/design/arrow.svg" alt="" /></Link></div>}
+      {feed.items.length > 0 && <div className={styles.feedList}>{feed.items.map((item) => <article className={styles.feedCard} key={item.public_id}><div className={styles.cardMeta}><span>{item.category}</span><time dateTime={item.published_at}>{dateFormatter.format(new Date(item.published_at))}</time></div>{item.recipient && <p className={styles.recipient}>Untuk: {item.recipient}</p>}<p className={styles.feedContent}>{item.content}</p><div className={styles.cardLinks}><Link to={`/menfess/${item.public_id}`}>Lihat detail</Link>{validInstagram(item.ig_permalink) && <a href={item.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</div></article>)}</div>}
+      {feed.cursor && feed.status !== "error" && <button className={`${styles.button} ${styles.loadMore}`} type="button" disabled={feed.status === "more"} onClick={() => load({ append: true, cursor: feed.cursor })}>{feed.status === "more" ? "Memuat…" : "Muat lagi"}</button>}
     </section>
   </Page>;
 }
