@@ -428,3 +428,6 @@ verify_jwt = false
 
 [functions.public-menfess]
 verify_jwt = false
+
+[functions.process-publication-queue]
+verify_jwt = false
