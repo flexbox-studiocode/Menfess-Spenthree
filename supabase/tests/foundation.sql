@@ -11,8 +11,8 @@ declare
   caught boolean;
   total integer;
 begin
-  insert into public.messages(request_id, tracking_code_hash, category, content)
-  values (rid, 'v1:' || repeat('a',64), 'menfess', 'Terima kasih untuk bantuannya.') returning id, public_id into mid, pubid;
+  insert into public.messages(request_id, tracking_code_hash, category, content, safety_approved_at, safety_policy_version)
+  values (rid, 'v1:' || repeat('a',64), 'menfess', 'Terima kasih untuk bantuannya.', now(), 'v1:' || repeat('d',64)) returning id, public_id into mid, pubid;
   select count(*) into total from public.publication_jobs where message_id = mid;
   assert total = 1, 'Queued insert must atomically create one job';
 
@@ -55,6 +55,15 @@ begin
   begin
     update public.messages set recipient = repeat('a',81) where id = mid;
     raise exception 'Long recipient accepted';
+  exception when check_violation then null; end;
+  begin
+    update public.messages set safety_policy_version = null where id = mid;
+    raise exception 'Incomplete safety approval accepted';
+  exception when check_violation then null; end;
+  begin
+    insert into public.messages(request_id, tracking_code_hash, category, content, safety_approved_at, safety_policy_version)
+    values(gen_random_uuid(), 'v1:' || repeat('e',64), 'menfess', 'Konten aman untuk uji constraint.', now(), 'invalid');
+    raise exception 'Invalid safety policy hash accepted';
   exception when check_violation then null; end;
   begin
     update public.messages set status = 'unknown' where id = mid;
@@ -107,7 +116,7 @@ begin
     assert (select relrowsecurity from pg_class where oid = ('public.' || target_table)::regclass), 'Missing RLS';
   end loop;
   foreach role_name in array array['anon','authenticated'] loop
-    foreach target_table in array array['messages','publication_jobs','idempotency_receipts','published_messages'] loop
+    foreach target_table in array array['messages','publication_jobs','idempotency_receipts','published_messages','timeline_messages'] loop
       assert not has_table_privilege(role_name, 'public.' || target_table, 'SELECT'), 'Public read grant';
       assert not has_table_privilege(role_name, 'public.' || target_table, 'INSERT,UPDATE,DELETE'), 'Public write grant';
       execute format('set local role %I', role_name);
@@ -133,9 +142,13 @@ begin
     reset role;
     assert caught, 'Role read internal metadata';
   end loop;
-  assert not exists(select 1 from information_schema.columns where table_schema = 'public' and table_name = 'published_messages' and column_name in ('id','request_id','tracking_code_hash','ig_media_id','rendered_image_path')), 'Feed leaks internal fields';
+  assert not exists(select 1 from information_schema.columns where table_schema = 'public' and table_name in ('published_messages','timeline_messages') and column_name in ('id','request_id','tracking_code_hash','ig_media_id','rendered_image_path','safety_approved_at','safety_policy_version')), 'Feed leaks internal fields';
+  assert not has_function_privilege('anon', 'public.submit_menfess_atomic(uuid,text,text,text,text,text,bytea,text,text)', 'EXECUTE'), 'Anon can execute approved submit RPC';
+  assert not has_function_privilege('authenticated', 'public.submit_menfess_atomic(uuid,text,text,text,text,text,bytea,text,text)', 'EXECUTE'), 'Authenticated can execute approved submit RPC';
+  assert has_function_privilege('service_role', 'public.submit_menfess_atomic(uuid,text,text,text,text,text,bytea,text,text)', 'EXECUTE'), 'Service role cannot execute approved submit RPC';
   set local role service_role;
   assert exists(select 1 from public.published_messages where public_id = pubid), 'Server cannot read public projection';
+  assert exists(select 1 from public.timeline_messages where public_id = pubid), 'Server cannot read safe timeline projection';
   reset role;
   -- A handled exception rolls back all fixture writes in this DO subtransaction.
   raise exception 'FOUNDATION_TEST_ROLLBACK' using errcode = 'ZX001';
