@@ -1,5 +1,7 @@
 # K-06 publication pipeline
 
+AI integration: follow [AI-MODERATION.md](AI-MODERATION.md) before activating. Both the environment kill switch and moderation_control.publishing_enabled must allow publication. Claims require current AI allow and matching immutable fingerprint. The worker rechecks approval before upload and after container readiness, then calls prepare_ai_publication to atomically verify lease/approval and persist the ambiguous-at marker before Meta publish. Ambiguous attempts are quarantined from future claims until reconciliation. Do not enable publication until the AI evaluation, server configuration and deployment checks pass.
+
 ## Runtime
 
 Renderer: Vercel Node Function `api/render-menfess.js`, `sharp` JPEG encoder. It produces a real 1080×1350 JPEG from sanitized SVG text; SVG is never returned as the publication asset. The renderer is server-to-server only and requires `RENDERER_SECRET`.

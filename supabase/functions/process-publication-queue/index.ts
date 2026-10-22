@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsForRequest, json, logFailure } from "../_shared/http.ts";
 import { createContainer, containerStatus, mediaPermalink, publishContainer } from "../_shared/instagram.ts";
+import { assertPublishableModeration, readSafetyConfig, safetyPolicyVersion } from "../_shared/content-safety.ts";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const maxJobs = 3;
@@ -18,40 +19,73 @@ Deno.serve(async (req) => {
   if (![url, serviceKey, token, userId, version].every(Boolean)) return new Response("Not found", { status: 404, headers: cors });
   const db = createClient(url!, serviceKey!);
   try {
+    const safety = readSafetyConfig(key => Deno.env.get(key));
+    const policy = await safetyPolicyVersion(safety, { ...safety, minCodePoints: 1, maxCodePoints: 80 }, Deno.env.get("MODERATION_POLICY_REVISION"));
+    const { data: control, error: controlError } = await db.from("moderation_control").select("active_policy,publishing_enabled").eq("singleton", true).single();
+    if (controlError) throw controlError;
+    if (!control?.publishing_enabled || control.active_policy !== policy) return json({ accepted: true, skipped: "moderation_disabled" }, 202, cors);
     const { data: jobs, error } = await db.rpc("claim_publication_jobs", { p_limit: maxJobs, p_lease_seconds: 240 });
     if (error) throw error;
     let processed = 0;
     for (const job of jobs ?? []) {
       try {
-        const { data: message, error: readError } = await db.from("messages").select("id,category,recipient,content,rendered_image_path").eq("id", job.message_id).single();
-        if (readError) throw readError;
+        const { data: message, error: readError } = await db.from("messages").select("id,request_id,category,recipient,content,status,rendered_image_path,safety_approved_at,safety_policy_version,safety_content_hash").eq("id", job.message_id).single();
+        if (readError || !message) throw readError || new Error("MODERATION_REQUIRED");
+        const checkApproval = async () => {
+          const { data: approval, error: approvalError } = await db.from("moderation_decisions").select("state,content_hash,policy_version").eq("request_id", message.request_id).single();
+          if (approvalError || !approval || !message.safety_approved_at || message.safety_policy_version !== approval.policy_version || message.safety_content_hash !== approval.content_hash) throw new Error("MODERATION_REQUIRED");
+          await assertPublishableModeration(message, { decision: approval.state, contentHash: approval.content_hash, policyVersion: approval.policy_version }, policy);
+        };
+        const lease = async () => {
+          const { data: current, error: gateError } = await db.from("moderation_control").select("active_policy,publishing_enabled").eq("singleton", true).single();
+          if (gateError || !current?.publishing_enabled || current.active_policy !== policy) throw new Error("MODERATION_REQUIRED");
+          const { data, error } = await db.from("publication_jobs").select("status,lock_token,lease_expires_at,container_id,ambiguous_at").eq("id", job.job_id).single();
+          if (error || !data || data.status !== "processing" || data.lock_token !== job.lock_token || !Number.isFinite(Date.parse(data.lease_expires_at)) || Date.parse(data.lease_expires_at) <= Date.now()) throw new Error("INTERNAL_ERROR");
+          if (data.ambiguous_at) throw new Error("PUBLISH_AMBIGUOUS");
+          await checkApproval();
+          return data;
+        };
+        const updateJob = async (values: Record<string, unknown>) => {
+          const { data, error } = await db.from("publication_jobs").update(values).eq("id", job.job_id).eq("lock_token", job.lock_token).eq("status", "processing").select("id");
+          if (error || !data || data.length !== 1) throw new Error("INTERNAL_ERROR");
+        };
+        const updateMessage = async (values: Record<string, unknown>, states: string[]) => {
+          const { data, error } = await db.from("messages").update(values).eq("id", job.message_id).in("status", states).select("id");
+          if (error || !data || data.length !== 1) throw new Error("INTERNAL_ERROR");
+        };
+        const claimed = await lease();
+        if (["queued", "retry_scheduled"].includes(message.status)) await updateMessage({ status: "processing" }, [message.status]);
         // Renderer is deployed separately; its secret never reaches the browser.
         const rendererUrl = Deno.env.get("RENDERER_URL"); const rendererSecret = Deno.env.get("RENDERER_SECRET");
         if (!rendererUrl || !rendererSecret) throw new Error("RENDER_FAILED");
-        const rendered = await fetch(rendererUrl, { method: "POST", headers: { authorization: `Bearer ${rendererSecret}`, "content-type": "application/json" }, body: JSON.stringify(message) });
+        const rendered = await fetch(rendererUrl, { method: "POST", signal: AbortSignal.timeout(15000), headers: { authorization: `Bearer ${rendererSecret}`, "content-type": "application/json" }, body: JSON.stringify({ category: message.category, recipient: message.recipient, content: message.content }) });
         if (!rendered.ok) throw new Error("RENDER_FAILED");
         const objectPath = `${crypto.randomUUID()}.jpg`;
         const image = await rendered.arrayBuffer();
+        await lease();
         const { error: uploadError } = await db.storage.from("instagram-publications").upload(objectPath, image, { contentType: "image/jpeg", upsert: false });
         if (uploadError) throw new Error("RENDER_FAILED");
         const { data: publicUrl } = db.storage.from("instagram-publications").getPublicUrl(objectPath);
-        await db.from("messages").update({ status: "publishing", rendered_image_path: objectPath }).eq("id", job.message_id);
+        await updateMessage({ status: "publishing", rendered_image_path: objectPath }, ["processing", "publishing"]);
         const ig = { token: token!, userId: userId!, version: version! };
-        let containerId = job.container_id;
-        if (!containerId) { const created = await createContainer(ig, publicUrl.publicUrl, caption(message.category)); containerId = String(created.id); await db.from("publication_jobs").update({ container_id: containerId, last_stage: "container_created" }).eq("id", job.job_id).eq("lock_token", job.lock_token); }
+        let containerId = claimed.container_id;
+        if (!containerId) { await lease(); const created = await createContainer(ig, publicUrl.publicUrl, caption(message.category)); containerId = String(created.id); await updateJob({ container_id: containerId, last_stage: "container_created" }); }
         let ready = false;
         for (let i = 0; i < 8; i++) { const status = await containerStatus(ig, containerId!); const state = String(status.status_code ?? status.status ?? ""); if (state === "FINISHED") { ready = true; break; } if (["ERROR", "EXPIRED"].includes(state)) throw new Error("MEDIA_UNAVAILABLE"); await wait(1500); }
         if (!ready) throw new Error("IG_TEMPORARY");
+        await lease();
+        const { data: prepared, error: prepareError } = await db.rpc("prepare_ai_publication", { p_job_id: job.job_id, p_lock_token: job.lock_token, p_policy_version: policy });
+        if (prepareError || prepared !== true) throw new Error("MODERATION_REQUIRED");
         const published = await publishContainer(ig, containerId!); const mediaId = String(published.id); const permalink = await mediaPermalink(ig, mediaId).then((x) => typeof x.permalink === "string" ? x.permalink : null).catch(() => null);
-        await db.from("messages").update({ status: "published", ig_media_id: mediaId, ig_permalink: permalink, published_at: new Date().toISOString() }).eq("id", job.message_id);
-        await db.from("publication_jobs").update({ status: "completed", locked_at: null, lease_expires_at: null, lock_token: null, last_stage: "completed" }).eq("id", job.job_id).eq("lock_token", job.lock_token);
+        await updateMessage({ status: "published", ig_media_id: mediaId, ig_permalink: permalink, published_at: new Date().toISOString() }, ["publishing"]);
+        await updateJob({ status: "completed", locked_at: null, lease_expires_at: null, lock_token: null, last_stage: "completed", ambiguous_at: null });
         processed++;
       } catch (cause) {
         logFailure(rid, "job", cause);
         const known = new Set(["RENDER_FAILED", "MEDIA_UNAVAILABLE", "IG_RATE_LIMIT", "IG_AUTH_REQUIRED", "IG_TEMPORARY", "PUBLISH_AMBIGUOUS", "RETRY_EXHAUSTED", "INTERNAL_ERROR"]);
         const errorCode = known.has(String((cause as Error).message)) ? String((cause as Error).message) : "INTERNAL_ERROR";
-        await db.from("messages").update({ status: "failed" }).eq("id", job.message_id).in("status", ["processing", "publishing"]);
-        await db.from("publication_jobs").update({ status: "failed", last_error_code: errorCode, locked_at: null, lease_expires_at: null, lock_token: null }).eq("id", job.job_id).eq("lock_token", job.lock_token);
+        const { data: failed, error: failureError } = await db.from("publication_jobs").update({ status: "failed", last_error_code: errorCode, locked_at: null, lease_expires_at: null, lock_token: null }).eq("id", job.job_id).eq("lock_token", job.lock_token).eq("status", "processing").select("id");
+        if (!failureError && failed?.length === 1) await db.from("messages").update({ status: "failed" }).eq("id", job.message_id).in("status", ["processing", "publishing"]);
       }
     }
     return json({ accepted: true, processed }, 200, cors);

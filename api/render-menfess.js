@@ -35,7 +35,7 @@ export async function renderMenfess({ category, recipient, content }) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST" || req.headers.authorization !== `Bearer ${process.env.RENDERER_SECRET}`) return res.status(404).end();
+  if (!process.env.RENDERER_SECRET || req.method !== "POST" || req.headers.authorization !== `Bearer ${process.env.RENDERER_SECRET}`) return res.status(404).end();
   try { const image = await renderMenfess(req.body); res.setHeader("content-type", "image/jpeg"); return res.status(200).send(image); }
   catch { return res.status(422).json({ error: "RENDER_FAILED" }); }
 }

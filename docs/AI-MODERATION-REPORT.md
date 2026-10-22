@@ -1,6 +1,6 @@
 # Hasil implementasi filter AI
 
-Tanggal: 22 Oktober 2026. Branch: codex/ai-content-filter. Belum commit, push atau deploy produksi.
+Tanggal: 22 Oktober 2026. Branch: codex/ai-content-filter. Laporan baseline beserta update integrasi Git di bawah. Backend produksi belum di-deploy.
 
 ## Yang diimplementasikan
 
@@ -14,17 +14,17 @@ Tanggal: 22 Oktober 2026. Branch: codex/ai-content-filter. Belum commit, push at
 
 | Pemeriksaan | Hasil |
 | --- | --- |
-| Unit/integrasi aplikasi | 140 lulus, 10 file |
+| Unit/integrasi aplikasi | 151 lulus, 12 file setelah penggabungan pipeline |
 | Lint dan production build | Lulus |
 | Deno typecheck Edge/provider/filter | Lulus |
-| Seluruh migrasi dan 3 file SQL | Lulus pada PostgreSQL 18 lokal terpisah |
+| Seluruh migrasi dan 4 file SQL | Lulus pada PostgreSQL 18 lokal terpisah |
 | Lease dan kuota dua koneksi | Satu permit; request kedua busy/ditolak |
 | Receipt ketika commit paralel | 31 pembacaan, hanya missing/replay, tanpa expired palsu |
 | Browser filter | 360/1440 px, draf/reject/gagal/retry/koreksi/busy/queued/overflow/runtime lulus |
 | Audit interaksi sebelumnya | 97 pemeriksaan lulus, tanpa runtime error |
 | Deno + Groq nyata + PostgreSQL lokal | 202 allow, 422 AI/local reject, 409 payload berubah, replay identik; tepat satu pesan/job |
 | Pemindaian credential source dan bundle | Tidak ada API key Groq |
-| Evaluasi beku saat laporan ditulis | 56/600 keputusan; 50 contoh kritis diperiksa, 0 kritis lolos; belum lulus gate rilis |
+| Evaluasi beku saat laporan ditulis | 154/600 keputusan; 50 contoh kritis diperiksa, 0 kritis lolos; belum lulus gate rilis |
 
 Laporan evaluasi terkini ada di artifacts/moderation-evaluation.json; hasil parsial tidak membuktikan akurasi produksi. Run berhenti dengan aman bila provider/kuota tidak tersedia. Evaluasi yang terikat dataset lama disimpan sebagai superseded dan tidak digabungkan.
 
@@ -39,8 +39,14 @@ Tidak ada implementer subagent; satu reviewer independen meninjau kode. Tidak ad
 ## Yang belum terverifikasi
 
 - Tiga putaran evaluasi model lengkap belum selesai. Kuota gratis dan gangguan provider menjadi batas nyata; publikasi tetap tertutup.
-- Worker Instagram nyata belum ditemukan; assertPublishableModeration harus dihubungkan sebelum render/upload/publish.
+- Worker Instagram dari upstream 4103b73 kini sudah digabungkan dan dihubungkan ke gate AI. Uji kode/SQL mencakup pencabutan approval saat container diproses dan gate akhir atomik; deployment backend dan publikasi Instagram nyata belum dilakukan.
 - Kelayakan pengelola akun, Zero Data Retention, pemberitahuan/persetujuan dan batas akun aktual belum diverifikasi. Key perlu diganti sebelum produksi karena pernah dibagikan lewat chat.
 - Tidak ada pengiriman posting Instagram, deployment atau perubahan database produksi.
 
 Petunjuk konfigurasi dan rilis: [AI-MODERATION.md](AI-MODERATION.md).
+
+## Update integrasi Git dan Vercel
+
+Perubahan upstream 4103b73 dipertahankan. Worker kini terhubung ke gate AI; claim dan persiapan publish atomik diuji pada SQL, termasuk pencabutan approval, token lease salah, dan marker ambigu. Renderer menolak akses jika secret kosong. Sharp diperbarui ke 0.35.5 untuk memperbaiki temuan audit pada dependency upstream; uji JPEG lulus dan audit dependency produksi bersih.
+
+151 tes, lint/build dan Deno typecheck submit/worker lulus. Pengguna memilih push dahulu dan deployment backend menyusul. AI key tetap hanya pada server env lokal; Git push/Vercel frontend tidak otomatis memasang Supabase secrets, migrasi atau mengaktifkan gate produksi.
