@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsForRequest, json, logFailure } from "../_shared/http.ts";
-import { createContainer, containerStatus, mediaPermalink, publishContainer } from "../_shared/instagram.ts";
+import { createContainer, containerStatus, mediaPermalink, parseContainerStatus, publishContainer } from "../_shared/instagram.ts";
 import { assertPublishableModeration, readSafetyConfig, safetyPolicyVersion } from "../_shared/content-safety.ts";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -71,21 +71,32 @@ Deno.serve(async (req) => {
         let containerId = claimed.container_id;
         if (!containerId) { await lease(); const created = await createContainer(ig, publicUrl.publicUrl, caption(message.category)); containerId = String(created.id); await updateJob({ container_id: containerId, last_stage: "container_created" }); }
         let ready = false;
-        for (let i = 0; i < 8; i++) { const status = await containerStatus(ig, containerId!); const state = String(status.status_code ?? status.status ?? ""); if (state === "FINISHED") { ready = true; break; } if (["ERROR", "EXPIRED"].includes(state)) throw new Error("MEDIA_UNAVAILABLE"); await wait(1500); }
+        for (let i = 0; i < 8; i++) { const status = await containerStatus(ig, containerId!); const state = parseContainerStatus(status); if (state === "FINISHED") { ready = true; break; } if (["ERROR", "EXPIRED"].includes(state)) throw new Error("MEDIA_UNAVAILABLE"); await wait(1500); }
         if (!ready) throw new Error("IG_TEMPORARY");
         await lease();
         const { data: prepared, error: prepareError } = await db.rpc("prepare_ai_publication", { p_job_id: job.job_id, p_lock_token: job.lock_token, p_policy_version: policy });
         if (prepareError || prepared !== true) throw new Error("MODERATION_REQUIRED");
         const published = await publishContainer(ig, containerId!); const mediaId = String(published.id); const permalink = await mediaPermalink(ig, mediaId).then((x) => typeof x.permalink === "string" ? x.permalink : null).catch(() => null);
-        await updateMessage({ status: "published", ig_media_id: mediaId, ig_permalink: permalink, published_at: new Date().toISOString() }, ["publishing"]);
-        await updateJob({ status: "completed", locked_at: null, lease_expires_at: null, lock_token: null, last_stage: "completed", ambiguous_at: null });
+        const { data: completed, error: completionError } = await db.rpc("complete_publication_job", {
+          p_job_id: job.job_id,
+          p_lock_token: job.lock_token,
+          p_media_id: mediaId,
+          p_permalink: permalink,
+        });
+        if (completionError || completed !== true) throw new Error("INTERNAL_ERROR");
         processed++;
       } catch (cause) {
         logFailure(rid, "job", cause);
         const known = new Set(["RENDER_FAILED", "MEDIA_UNAVAILABLE", "IG_RATE_LIMIT", "IG_AUTH_REQUIRED", "IG_TEMPORARY", "PUBLISH_AMBIGUOUS", "RETRY_EXHAUSTED", "INTERNAL_ERROR"]);
         const errorCode = known.has(String((cause as Error).message)) ? String((cause as Error).message) : "INTERNAL_ERROR";
-        const { data: failed, error: failureError } = await db.from("publication_jobs").update({ status: "failed", last_error_code: errorCode, locked_at: null, lease_expires_at: null, lock_token: null }).eq("id", job.job_id).eq("lock_token", job.lock_token).eq("status", "processing").select("id");
-        if (!failureError && failed?.length === 1) await db.from("messages").update({ status: "failed" }).eq("id", job.message_id).in("status", ["processing", "publishing"]);
+        const retryable = ["RENDER_FAILED", "MEDIA_UNAVAILABLE", "IG_RATE_LIMIT", "IG_TEMPORARY", "INTERNAL_ERROR"].includes(errorCode);
+        // The transition updates both outbox and message atomically and rejects stale leases.
+        await db.rpc("finish_publication_job", {
+          p_job_id: job.job_id,
+          p_lock_token: job.lock_token,
+          p_error_code: errorCode,
+          p_retryable: retryable,
+        });
       }
     }
     return json({ accepted: true, processed }, 200, cors);

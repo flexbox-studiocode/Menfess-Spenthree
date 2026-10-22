@@ -2,7 +2,7 @@
 
 Alur kirim terbaru: pesan yang lolos validasi dan filter lokal langsung disimpan privat dan mendapat kode pelacakan, tanpa menunggu AI. Pemeriksaan dan publikasi berlangsung melalui worker terpisah. Lihat [antrean moderasi](docs/MODERATION-QUEUE.md) untuk perilaku, batas kapasitas, serta langkah deployment. Catatan fondasi di bawah merekam tahap awal proyek.
 
-Fondasi K-01/K-03: React + Vite (JavaScript), React Router, CSS Modules, Lucide React, Supabase PostgreSQL 17. Tanpa login pengguna atau panel admin/moderator. UI hanya placeholder teknis untuk dilanjutkan Reiner; endpoint submit/feed/detail/tracking dan publisher Instagram **belum diimplementasikan**.
+Aplikasi saat ini menggunakan React + Vite (JavaScript), React Router, CSS Modules, Lucide React, Supabase PostgreSQL 17. Tanpa login pengguna atau panel admin/moderator. Intake, tracking, antrean moderasi AI, feed/detail published-only, renderer, dan worker publikasi sudah terdokumentasi/diimplementasikan pada branch ini; publikasi Instagram produksi tetap nonaktif sampai prasyarat rilis pada [AI moderation](docs/AI-MODERATION.md) dan [K-06 publication](docs/K06-PUBLICATION.md) terpenuhi.
 
 ## Persiapan
 
@@ -29,7 +29,7 @@ npm test
 npm run build
 ```
 
-`npm run dev` menjalankan Vite. Production build di `dist/`. Host statis harus mengarahkan route non-file ke index.html untuk BrowserRouter; deployment final termasuk pekerjaan K-08.
+`npm run dev` menjalankan Vite. Production build di `dist/`. Host statis harus mengarahkan route non-file ke index.html untuk BrowserRouter. Untuk production, terapkan migration pada Supabase PostgreSQL 17, deploy Edge Functions `submit-menfess`, `track-menfess`, `process-moderation-queue`, dan `process-publication-queue`, deploy `api/render-menfess.js` ke Vercel, konfigurasi server secrets melalui secret manager, pasang scheduler worker, lalu jalankan smoke test dan evaluasi moderasi lengkap. Ikuti [antrean moderasi](docs/MODERATION-QUEUE.md), [AI moderation](docs/AI-MODERATION.md), [K-04 deployment](docs/K04-DEPLOYMENT.md), dan [K-06 publication](docs/K06-PUBLICATION.md). Jangan mengaktifkan publikasi sebelum gate kebijakan, evaluasi, akses Meta, dan rekonsiliasi publikasi lulus.
 
 ## Struktur dan kerja bersama
 
@@ -80,13 +80,13 @@ npx supabase db lint --local
 npx supabase start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 ```
 
-Database-only cukup untuk tes SQL, bukan pengujian browser/Data API. Tidak perlu db reset; gunakan migration normal, termasuk saat menjalankan ulang. `pg_cron` membersihkan receipt terenkripsi setiap jam; implementasi enkripsi, validasi TTL replay, dan transaksi submit server-only diselesaikan K-04. Retensi pesan/job/aset butuh kebijakan pemilik sebelum rilis.
+Database-only cukup untuk tes SQL, bukan pengujian browser/Data API. Tidak perlu db reset; gunakan migration normal, termasuk saat menjalankan ulang. `pg_cron` membersihkan receipt terenkripsi setiap jam; enkripsi, validasi TTL replay, dan transaksi submit server-only sudah menjadi bagian implementasi K-04. Retensi pesan/job/aset butuh kebijakan pemilik sebelum rilis.
 
 ## Batas tahap ini
 
 Backend nantinya memakai secret server untuk akses service_role ke tiga tabel internal. Browser hanya memanggil Edge Functions yang tervalidasi; tidak diberi SELECT/INSERT/UPDATE/DELETE internal. RLS dan grants ditulis eksplisit dalam migration. Feed/detail memakai proyeksi published-only. Tidak ada secret tracking/enkripsi yang ditanam dalam SQL atau frontend.
 
-Lanjutkan K-02 verifikasi Instagram API secara terpisah, K-04 transaksi submit + tracking + anti-abuse, kemudian K-05 feed/detail. Jangan menyatakan publikasi Instagram siap sebelum spike API dan worker benar-benar diuji.
+Verifikasi production yang tersisa mencakup kelayakan akun Meta/Instagram, evaluasi moderasi tiga putaran, konfigurasi policy hash, deployment secrets/scheduler, smoke test, dan rekonsiliasi satu test publication. Jangan menyatakan publikasi Instagram siap sebelum seluruh gate pada dokumen deployment dan publication lulus.
 
 ## Proses Pengembangan
 

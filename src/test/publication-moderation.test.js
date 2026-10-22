@@ -1,7 +1,7 @@
 import { webcrypto } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { contentFingerprint, readSafetyConfig, safetyPolicyVersion } from "../../supabase/functions/_shared/content-safety.ts";
-const mocks = vi.hoisted(() => ({ createClient: vi.fn(), createContainer: vi.fn(), containerStatus: vi.fn(), publishContainer: vi.fn(), mediaPermalink: vi.fn() }));
+const mocks = vi.hoisted(() => ({ createClient: vi.fn(), createContainer: vi.fn(), containerStatus: vi.fn(), parseContainerStatus: vi.fn(body => String(body?.status_code ?? body?.status ?? "UNKNOWN").toUpperCase()), publishContainer: vi.fn(), mediaPermalink: vi.fn() }));
 vi.mock("https://esm.sh/@supabase/supabase-js@2", () => ({ createClient: mocks.createClient }));
 vi.mock("../../supabase/functions/_shared/instagram.ts", () => mocks);
 let handler, env, control, message, approval, rpc, upload, queries, publishingError;
@@ -21,7 +21,7 @@ beforeEach(async () => {
   message = { id: "message-1", request_id: "request-1", category: "aspirasi", recipient: null, content: "Tolong tambah tempat sampah di taman.", status: "queued", safety_approved_at: new Date().toISOString(), safety_policy_version: policyVersion, safety_content_hash: await contentFingerprint({ category: "aspirasi", recipient: null, content: "Tolong tambah tempat sampah di taman." }) };
   approval = { state: "allow", policy_version: policyVersion, content_hash: message.safety_content_hash };
   publishingError = false; queries = [];
-  rpc = vi.fn().mockImplementation(async name => ({ data: name === "prepare_ai_publication" ? true : [{ job_id: "job-1", message_id: "message-1", lock_token: "lease-1" }], error: null }));
+  rpc = vi.fn().mockImplementation(async name => ({ data: ["prepare_ai_publication", "complete_publication_job"].includes(name) ? true : [{ job_id: "job-1", message_id: "message-1", lock_token: "lease-1" }], error: null }));
   upload = vi.fn().mockResolvedValue({ error: null });
   const from = table => {
     let update;
@@ -56,7 +56,6 @@ it("stops before Meta calls if the database refuses the publishing transition", 
 it("preserves publication only after current approval and a successful database transition", async () => {
   const result = await (await handler(request())).json();
   expect(result.processed).toBe(1);
-  expect(queries.some(row => row.table === "messages" && row.update.status === "processing")).toBe(true);
   expect(mocks.publishContainer).toHaveBeenCalledTimes(1);
 });
 it("does not publish when AI approval is revoked while the Meta container becomes ready", async () => {

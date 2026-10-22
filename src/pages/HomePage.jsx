@@ -16,7 +16,8 @@ export default function HomePage() {
   const request = useRef(0);
   const activeController = useRef(null);
   const load = useCallback(async ({ append = false, cursor } = {}) => {
-    activeController.current?.abort();
+    // Do not start a second feed request while a refresh or pagination request is pending.
+    if (activeController.current) return;
     const id = ++request.current;
     const controller = new AbortController();
     activeController.current = controller;
@@ -28,13 +29,15 @@ export default function HomePage() {
     } catch (error) {
       if (id !== request.current || error?.name === "AbortError") return;
       setFeed((old) => ({ ...old, status: "error", error: error.message || "Linimasa gagal dimuat." }));
+    } finally {
+      if (id === request.current) activeController.current = null;
     }
   }, [active.slug]);
   useEffect(() => {
     load();
     const refresh = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", refresh);
-    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
+    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 15000);
     return () => { document.removeEventListener("visibilitychange", refresh); window.clearInterval(interval); request.current += 1; activeController.current?.abort(); };
   }, [load]);
 

@@ -29,8 +29,8 @@ function userError(code, status) {
   if (code === "RECEIPT_EXPIRED") return "Batas retry request ini sudah berakhir. Buat pesan baru untuk mengirim ulang.";
   if (code === "NOT_FOUND") return "Kode tracking tidak ditemukan.";
   if (status === 429) return "Terlalu banyak permintaan. Coba lagi nanti.";
+  if ([502, 503, 504].includes(status)) return "Gateway sedang tidak tersedia. Coba lagi dengan request yang sama.";
   if (status >= 500) return "Server sedang mengalami gangguan. Coba lagi dengan request yang sama.";
-  if (status === 502 || status === 503 || status === 504) return "Gateway sedang tidak tersedia. Coba lagi dengan request yang sama.";
   return "Permintaan belum dapat diproses. Coba lagi dengan request yang sama.";
 }
 
