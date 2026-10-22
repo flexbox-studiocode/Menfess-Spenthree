@@ -85,3 +85,7 @@ Database-only cukup untuk tes SQL, bukan pengujian browser/Data API. Tidak perlu
 Backend nantinya memakai secret server untuk akses service_role ke tiga tabel internal. Browser hanya memanggil Edge Functions yang tervalidasi; tidak diberi SELECT/INSERT/UPDATE/DELETE internal. RLS dan grants ditulis eksplisit dalam migration. Feed/detail memakai proyeksi published-only. Tidak ada secret tracking/enkripsi yang ditanam dalam SQL atau frontend.
 
 Lanjutkan K-02 verifikasi Instagram API secara terpisah, K-04 transaksi submit + tracking + anti-abuse, kemudian K-05 feed/detail. Jangan menyatakan publikasi Instagram siap sebelum spike API dan worker benar-benar diuji.
+
+## Proses Pengembangan
+
+Dimana Projek ini masih dalam tahap perkembangan.
