@@ -164,8 +164,23 @@ describe("submit receipts", () => {
     expectCors(response);
     expect((await response.json()).error.code).toBe("RECEIPT_EXPIRED");
   });
+  it.each([
+    { recipient: "Hubungi user@example.com" },
+    { recipient: "ikuti @nama.akun" },
+  ])("rejects unsafe recipient without DB access: %j", async (changes) => {
+    const response = await submit(request({ ...validSubmission, ...changes }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toMatchObject({ code: "CONTENT_UNSAFE", fields: { recipient: expect.any(String) } });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
   it("rejects oversized requests before parsing", async () => {
     const response = await submit(request(validSubmission, { headers: { "content-length": "12001" } }));
+    expect(response.status).toBe(413);
+    expectCors(response);
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+  it("enforces actual UTF-8 body bytes when content-length is absent or false", async () => {
+    const response = await submit(request({ ...validSubmission, content: "😀".repeat(4000) }));
     expect(response.status).toBe(413);
     expectCors(response);
     expect(mocks.createClient).not.toHaveBeenCalled();

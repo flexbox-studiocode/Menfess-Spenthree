@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Page from "./Page.jsx";
 import styles from "./Secondary.module.css";
@@ -14,13 +14,24 @@ export default function StatusPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const checking = useRef(false);
-  const check = async event => {
-    event.preventDefault(); if (checking.current) return;
-    checking.current = true; setBusy(true); setError(""); setResult(null);
-    try { setResult(await trackMenfess(code.trim())); }
-    catch (err) { setError(err.message); }
-    finally { checking.current = false; setBusy(false); }
-  };
+  const request = useRef(0);
+  const latestCode = code.trim() || result?.tracking_code;
+  const checkLatest = useCallback(async (trackingCode, clear = false) => {
+    if (checking.current || !trackingCode) return;
+    const id = ++request.current;
+    checking.current = true; setBusy(true); setError(""); if (clear) setResult(null);
+    try { const next = await trackMenfess(trackingCode); if (id === request.current) setResult(next); }
+    catch (err) { if (id === request.current) setError(err.message); }
+    finally { if (id === request.current) { checking.current = false; setBusy(false); } }
+  }, []);
+  const check = event => { event.preventDefault(); checkLatest(code.trim(), true); };
+  useEffect(() => {
+    if (!latestCode || ["published", "failed", "blocked"].includes(result?.status)) return undefined;
+    const refresh = () => { if (document.visibilityState === "visible") checkLatest(latestCode); };
+    document.addEventListener("visibilitychange", refresh);
+    const interval = window.setInterval(refresh, 15000);
+    return () => { document.removeEventListener("visibilitychange", refresh); window.clearInterval(interval); request.current += 1; checking.current = false; };
+  }, [latestCode, result?.status, checkLatest]);
   const permalink = instagramUrl(result?.ig_permalink);
   const publicationDate = result?.published_at ? new Date(result.published_at) : null;
   const hasDate = publicationDate && !Number.isNaN(publicationDate.getTime());
@@ -33,6 +44,8 @@ export default function StatusPage() {
       {result.tracking_code && <CopyCode code={result.tracking_code} />}
       <h2>Status menfess</h2><ol className={styles.timeline}><li><h3>{statusLabels[result.status] || "Status belum dikenali"}</h3><p>{result.message}</p></li>{hasDate && <li><h3>Waktu diterbitkan</h3><p><time dateTime={publicationDate.toISOString()}>{publicationDate.toLocaleString("id-ID")}</time></p></li>}</ol>
       {permalink && <a className={`${styles.button} ${styles.secondary}`} href={permalink} target="_blank" rel="noreferrer">Buka Instagram</a>}
+      {location.state?.submitted && <Link className={`${styles.button} ${styles.secondary}`} to="/">Lihat linimasa</Link>}
+      {!location.state?.submitted && result.public_id && <Link className={`${styles.button} ${styles.secondary}`} to={`/menfess/${result.public_id}`}>Lihat menfess</Link>}
       {result.tracking_code && <p className={styles.muted}>Simpan kode ini. Kode pelacakan tidak ditampilkan di URL.</p>}
     </section> : !error && !busy && <p className={styles.muted}>Masukkan kode yang kamu terima setelah mengirim pesan. Simpan kode tersebut untuk memeriksa statusnya kembali.</p>}
   </Page>;

@@ -167,10 +167,10 @@ describe("preserved menfess integration", () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [], next_cursor: null }) });
     vi.stubGlobal("fetch", fetchMock); renderRoute("/");
-    expect(await screen.findByText("Belum ada menfess yang diterbitkan")).toBeInTheDocument();
+    expect(await screen.findByText("Belum ada menfess di linimasa")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Aspirasi", exact: true }));
     expect(screen.getByRole("button", { name: "Aspirasi", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await screen.findByText("Belum ada menfess yang diterbitkan");
+    await screen.findByText("Belum ada menfess di linimasa");
     expect(fetchMock.mock.calls.at(-1)[0].searchParams.get("category")).toBe("aspirasi");
     expect(invoke).not.toHaveBeenCalled();
     await user.click(within(screen.getByRole("status")).getByRole("link", { name: "Tulis menfess" }));

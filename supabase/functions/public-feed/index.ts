@@ -3,8 +3,8 @@ import { corsForRequest, error, json, logFailure } from "../_shared/http.ts";
 
 const categories = new Set(["menfess", "aspirasi", "curhat", "apresiasi"]);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const columns = "public_id,category,recipient,content,published_at,ig_permalink";
-type Cursor = { v: 1; category: string | null; published_at: string; public_id: string };
+const columns = "public_id,category,recipient,content,status,created_at,published_at,ig_permalink";
+type Cursor = { v: 1; category: string | null; created_at: string; public_id: string };
 
 const encodeCursor = (value: Cursor) => btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 const decodeCursor = (raw: string, category: string | null): Cursor | null => {
@@ -12,10 +12,10 @@ const decodeCursor = (raw: string, category: string | null): Cursor | null => {
     if (raw.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
     const base64 = raw.replaceAll("-", "+").replaceAll("_", "/");
     const value = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="))) as Cursor;
-    if (value?.v !== 1 || value.category !== category || !uuid.test(value.public_id) || typeof value.published_at !== "string") return null;
-    const date = new Date(value.published_at);
+    if (value?.v !== 1 || value.category !== category || !uuid.test(value.public_id) || typeof value.created_at !== "string") return null;
+    const date = new Date(value.created_at);
     if (!Number.isFinite(date.valueOf())) return null;
-    return { ...value, published_at: date.toISOString() };
+    return { ...value, created_at: date.toISOString() };
   } catch { return null; }
 };
 
@@ -46,14 +46,14 @@ Deno.serve(async (req) => {
     if (!url || !serviceKey) throw new Error("Missing configuration");
     const db = createClient(url, serviceKey);
     stage = "query_feed";
-    let query = db.from("published_messages").select(columns).order("published_at", { ascending: false }).order("public_id", { ascending: false }).limit(limit + 1);
+    let query = db.from("timeline_messages").select(columns).order("created_at", { ascending: false }).order("public_id", { ascending: false }).limit(limit + 1);
     if (category) query = query.eq("category", category);
-    if (cursor) query = query.or(`published_at.lt.${cursor.published_at},and(published_at.eq.${cursor.published_at},public_id.lt.${cursor.public_id})`);
+    if (cursor) query = query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},public_id.lt.${cursor.public_id})`);
     const { data, error: dbError } = await query;
     if (dbError) throw dbError;
     const rows = (data ?? []).slice(0, limit);
     const last = rows.at(-1);
-    const next = (data?.length ?? 0) > limit && last ? encodeCursor({ v: 1, category, published_at: new Date(last.published_at).toISOString(), public_id: last.public_id }) : null;
+    const next = (data?.length ?? 0) > limit && last ? encodeCursor({ v: 1, category, created_at: new Date(last.created_at).toISOString(), public_id: last.public_id }) : null;
     return json({ data: rows, next_cursor: next }, 200, cors);
   } catch (cause) {
     logFailure(rid, stage, cause);

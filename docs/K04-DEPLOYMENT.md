@@ -54,3 +54,9 @@ The automatic SQL tests cover schema constraints, trigger outbox, roles, and RLS
 ## Key rotation
 
 Do not overwrite an active key blindly. Add a versioned secret and migration/Function support that can decrypt old receipt versions during the retention window, issue new receipts with the new version, then retire the old key after all receipts expire. Tracking HMAC rotation needs dual lookup (`v1` and new version) until all relevant tracking records are migrated. Never log keys or receipt plaintext.
+
+## Content-safety rollout
+
+Apply `20261022040000_content_safety_timeline.sql` before deploying the updated submit/public functions. The migration deliberately leaves legacy rows unapproved and hidden until a trusted revalidation process evaluates content and recipient. During rolling deployment, the old eight-argument `submit_menfess_atomic` signature remains only as a fail-closed maintenance function that cannot insert. Deploy the new function immediately after migration; drop the maintenance signature in a later cleanup after all old instances have drained.
+
+Set `CONTENT_SAFETY_FORBIDDEN_TERMS` as an optional comma-separated list (maximum 200 normalized terms, 80 code points each). Submit validates content and recipient before DB access. Deploy only after dry-run and HTTP/SQL regression tests; no deployment is performed by this change.

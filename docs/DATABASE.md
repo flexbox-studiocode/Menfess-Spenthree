@@ -42,3 +42,7 @@ Pesan/job/aset belum memiliki auto-delete: penghapusan messages akan menghapus r
 - Eksekusi ulang db push harus no-op lewat riwayat migration.
 - Tes `npx supabase db query --local --file supabase/tests/foundation.sql` atau `--linked` pada dev. Fixture sintetis dibatalkan melalui exception khusus yang ditangkap pada subtransaksi DO; semua assertion error lain tetap menggagalkan tes. Format single statement mendukung db query CLI 2.121.0 yang menolak beberapa command prepared sekaligus. Tidak ada data nyata dicetak. Tes bukan untuk produksi.
 - `npx supabase db lint --local` / `--linked` memeriksa fungsi. Akses grants negatif diuji dengan SET LOCAL ROLE anon dan authenticated; service_role diuji positif. Sebelum rilis tambahkan tes HTTP Data API/Edge Functions, concurrency submit/claim dan expiry replay saat endpoint tersedia.
+
+## Safety timeline migration
+
+Migration `20261022040000_content_safety_timeline.sql` adds approval metadata and the `timeline_messages` projection. Its partial indexes cover every visible status (`queued`, `processing`, `publishing`, `retry_scheduled`, `published`, `failed`) using `(created_at DESC, public_id DESC)`; blocked and unapproved rows are excluded. The migration replaces the submit RPC with a required safety-policy argument. The legacy eight-argument overload is replaced by a fail-closed maintenance function, preserving rolling-deploy compatibility without an insertion bypass. Only approved inserts trigger the existing queued publication outbox; rejected submissions never reach the RPC.

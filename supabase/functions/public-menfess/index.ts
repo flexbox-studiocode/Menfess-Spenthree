@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsForRequest, error, json, logFailure } from "../_shared/http.ts";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const columns = "public_id,category,recipient,content,published_at,ig_permalink";
+const columns = "public_id,category,recipient,content,status,created_at,published_at,ig_permalink";
 
 Deno.serve(async (req) => {
   const rid = crypto.randomUUID();
@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     if (!url || !serviceKey) throw new Error("Missing configuration");
     stage = "query_detail";
     const db = createClient(url, serviceKey);
-    const { data, error: dbError } = await db.from("published_messages").select(columns).eq("public_id", params.get("id")).maybeSingle();
+    const { data, error: dbError } = await db.from("timeline_messages").select(columns).eq("public_id", params.get("id")).maybeSingle();
     if (dbError) throw dbError;
     if (!data) return fail("NOT_FOUND", 404);
     return json({ data }, 200, cors);

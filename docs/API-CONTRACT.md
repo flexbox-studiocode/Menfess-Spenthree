@@ -110,3 +110,9 @@ Hanya published boleh memiliki waktu/permalink. Tidak mengembalikan content, rec
 - Tidak ada status `pending`; gunakan queued. Job memiliki state tersendiri, jangan dipakai sebagai status UI.
 - Batas recipient ditetapkan 80; public_id dipisahkan dari id internal. CSS Modules dipakai bersama Reiner, tanpa Tailwind.
 - Autentikasi gateway Edge Functions untuk pengunjung anonim, CORS allowlist, payload limit, challenge/rate limit, polling serta RPC transaksi submit diselesaikan K-04/K-05, bukan task fondasi ini. Publishable key bukan autentikasi pengguna atau perlindungan abuse.
+
+## Safety-approved timeline extension (2026-10-22)
+
+Public feed/detail now return safety-approved messages in `queued`, `processing`, `publishing`, `retry_scheduled`, `published`, or `failed`; `blocked` and unreviewed legacy rows remain hidden. The public projection adds `status` and `created_at`, orders by `(created_at DESC, public_id DESC)`, and never exposes internal IDs, tracking hashes, safety metadata, or job fields. UI must label status honestly and only show Instagram links when present and valid.
+
+Submit applies the same contact/forbidden-term policy to both `content` and non-null `recipient`. Unsafe fields return `422 CONTENT_UNSAFE` and no message or publication job is created.

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decrypt, encrypt, hmac, hex } from "../_shared/crypto.ts";
 import { corsForRequest, error, json, logFailure } from "../_shared/http.ts";
+import { evaluateContentSafety, readSafetyConfig, safetyPolicyVersion } from "../_shared/content-safety.ts";
 
 const categories = new Set(["menfess", "aspirasi", "curhat", "apresiasi"]);
 const enc = new TextEncoder();
@@ -15,7 +16,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return fail("VALIDATION_ERROR", 400);
   if (Number(req.headers.get("content-length") ?? 0) > 12000) return fail("PAYLOAD_TOO_LARGE", 413);
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+    if (enc.encode(rawBody).byteLength > 12000) return fail("PAYLOAD_TOO_LARGE", 413);
+    const body = JSON.parse(rawBody);
     if (!body || typeof body !== "object" || Object.keys(body).sort().join(",") !== "category,content,recipient,request_id,rules_accepted") return fail("VALIDATION_ERROR", 400);
     const { request_id, category, content, recipient, rules_accepted } = body;
     const fields: Record<string,string> = {};
@@ -27,6 +30,20 @@ Deno.serve(async (req) => {
     if (rec !== null && (points(rec) < 1 || points(rec) > 80 || /[\x00-\x1f\x7f]/u.test(rec))) fields.recipient = "Penerima tidak valid.";
     if (rules_accepted !== true) fields.rules_accepted = "Persetujuan wajib diberikan.";
     if (Object.keys(fields).length) return fail("VALIDATION_ERROR", 400, fields);
+    stage = "content_safety";
+    const safetyConfig = readSafetyConfig((key) => Deno.env.get(key));
+    const recipientConfig = { ...safetyConfig, minCodePoints: 1, maxCodePoints: 80 };
+    const [contentSafety, recipientSafety, policyVersion] = await Promise.all([
+      evaluateContentSafety(normalized, safetyConfig),
+      rec === null ? Promise.resolve(null) : evaluateContentSafety(rec, recipientConfig),
+      safetyPolicyVersion(safetyConfig, recipientConfig),
+    ]);
+    if (!contentSafety.approved || recipientSafety?.approved === false) {
+      return fail("CONTENT_UNSAFE", 422, {
+        ...(!contentSafety.approved ? { content: "Isi mengandung informasi kontak atau konten yang dilarang." } : {}),
+        ...(recipientSafety?.approved === false ? { recipient: "Penerima mengandung informasi kontak atau konten yang dilarang." } : {}),
+      });
+    }
     const payload = JSON.stringify({ request_id, category, recipient: rec, content: normalized, rules_accepted });
     stage = "validate_secrets";
     const trackingSecret = Deno.env.get("TRACKING_HASH_SECRET");
@@ -42,7 +59,7 @@ Deno.serve(async (req) => {
     const encrypted = await encrypt(receiptSecret, JSON.stringify({ tracking_code: tracking, status: "queued" }), `${request_id}:${version}`);
     const db = createClient(supabaseUrl, serviceKey);
     stage = "rpc_submit";
-    const { data: rpcData, error: dbError } = await db.rpc("submit_menfess_atomic", { p_request_id: request_id, p_tracking_code_hash: trackingHash, p_category: category, p_recipient: rec, p_content: normalized, p_payload_hash: payloadHash, p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version });
+    const { data: rpcData, error: dbError } = await db.rpc("submit_menfess_atomic", { p_request_id: request_id, p_tracking_code_hash: trackingHash, p_category: category, p_recipient: rec, p_content: normalized, p_payload_hash: payloadHash, p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version, p_safety_policy_version: policyVersion });
     if (dbError || !rpcData) throw dbError || new Error("Atomic submit returned no data");
     stage = "parse_receipt";
     // PostgREST returns a composite RPC result as a one-row array.
