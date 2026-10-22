@@ -7,6 +7,9 @@ declare
   replay public.submit_result;
   expired public.submit_result;
 begin
+  update public.moderation_control set active_policy='v1:'||repeat('a',64);
+  insert into public.moderation_decisions(request_id,payload_hash,policy_version,content_hash,state)
+  values(rid,'v1:'||repeat('b',64),'v1:'||repeat('a',64),public.moderation_fingerprint('menfess',null,'Synthetic receipt regression test.'),'allow');
   first_result := public.submit_menfess_atomic(rid, 'v1:' || repeat('a',64), 'menfess', null,
     'Synthetic receipt regression test.', 'v1:' || repeat('b',64), decode('010203','hex'), 'v1', 'v1:' || repeat('a',64));
   assert first_result.inserted, 'New message not identified as inserted';
@@ -29,8 +32,10 @@ begin
   assert (select content from public.messages where request_id=rid) = 'Synthetic receipt regression test.', 'Conflict changed message';
 
   -- Simulate a retained message whose receipt no longer exists without deleting data.
-  insert into public.messages(request_id,tracking_code_hash,category,content)
-    values(tombstone,'v1:' || repeat('f',64),'menfess','Synthetic expired request fixture.');
+  insert into public.moderation_decisions(request_id,payload_hash,policy_version,content_hash,state)
+  values(tombstone,'v1:'||repeat('1',64),'v1:'||repeat('a',64),public.moderation_fingerprint('menfess',null,'Synthetic expired request fixture.'),'allow');
+  insert into public.messages(request_id,tracking_code_hash,category,content,safety_approved_at,safety_policy_version,safety_content_hash)
+    values(tombstone,'v1:' || repeat('f',64),'menfess','Synthetic expired request fixture.',now(),'v1:'||repeat('a',64),public.moderation_fingerprint('menfess',null,'Synthetic expired request fixture.'));
   expired := public.submit_menfess_atomic(tombstone, 'v1:' || repeat('0',64), 'menfess', null,
     'Synthetic expired request fixture.', 'v1:' || repeat('1',64), decode('010203','hex'), 'v1', 'v1:' || repeat('a',64));
   assert not expired.inserted, 'Expired request inserted';

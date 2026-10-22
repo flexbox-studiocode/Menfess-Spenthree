@@ -18,6 +18,26 @@ beforeEach(() => {
 });
 
 describe("preserved menfess integration", () => {
+  it("tracks a queued receipt without discarding the response when pending status clears", async () => {
+    const user = userEvent.setup(); saveDraft(draft);
+    invoke.mockResolvedValueOnce({ data: { status: "queued", tracking_code: "SPT-test", message: "Diterima" }, error: null });
+    renderRoute("/review");
+    await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
+    await screen.findByRole("heading", { name: "Status pesan" });
+    invoke.mockResolvedValueOnce({ data: { status: "published", published_at: "2026-10-22T00:00:00Z", ig_permalink: "https://www.instagram.com/p/synthetic/", message: "Sudah diterbitkan" }, error: null });
+    await user.type(screen.getByLabelText("Kode pelacakan"), "SPT-test");
+    await user.click(screen.getByRole("button", { name: "Periksa status" }));
+    expect(await screen.findByRole("link", { name: /Buka Instagram/ })).toHaveAttribute("href", "https://www.instagram.com/p/synthetic/");
+  });
+  it("uses a new request ID only when an attempted payload changes", async () => {
+    const user = userEvent.setup(); saveDraft({ ...draft, request_id: "old-request-id" });
+    renderRoute("/write");
+    await user.clear(screen.getByLabelText("Isi pesan"));
+    await user.type(screen.getByLabelText("Isi pesan"), "Tolong tambah koleksi buku di perpustakaan.");
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(readDraft()).not.toHaveProperty("request_id");
+    expect(readDraft().content).toContain("koleksi buku");
+  });
   it.each([false, true])("focuses the first invalid field with reduced motion = %s", async reduced => {
     const scrollIntoView = vi.fn();
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: !reduced })));
@@ -70,8 +90,8 @@ describe("preserved menfess integration", () => {
     expect(payload.request_id).toMatch(/^[\da-f-]{36}$/);
     expect(readDraft()).toEqual(payload);
     await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
-    expect(screen.getByRole("button", { name: "Mengirim..." })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Mengirim..." })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Memeriksa pesan..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Memeriksa pesan..." })).toHaveAttribute("aria-busy", "true");
     expect(invoke.mock.calls[1][1].body).toEqual(payload);
     finish({ data: { accepted: true, status: "queued", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Menfess diterima." }, error: null });
     await screen.findByRole("heading", { name: "Status pesan" });

@@ -21,6 +21,8 @@ async function readErrorDetail(error) {
 }
 
 function userError(code, status) {
+  if (code === "CONTENT_UNSAFE") return "Pesan belum dapat dikirim. Periksa kata-kata, informasi pribadi, atau isi yang dapat menyakiti orang lain.";
+  if (code === "MODERATION_UNAVAILABLE") return "Pemeriksaan pesan sedang tidak tersedia. Pesan belum dikirim. Coba lagi nanti.";
   if (code === "VALIDATION_ERROR") return "Periksa kembali kategori, isi pesan, penerima, dan persetujuan.";
   if (code === "IDEMPOTENCY_CONFLICT") return "Request ID ini sudah dipakai untuk isi pesan berbeda. Pertahankan draf atau buat request baru.";
   if (code === "RECEIPT_EXPIRED") return "Batas retry request ini sudah berakhir. Buat pesan baru untuk mengirim ulang.";
@@ -99,6 +101,13 @@ export function fetchPublicMenfess(publicId, signal) {
 
 export const DRAFT_KEY = "menfess-spenthree-draft";
 export function createRequestId() { return crypto.randomUUID(); }
-export function saveDraft(draft) { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); }
+export function saveDraft(draft) {
+  const previous = readDraft();
+  const canonical = value => JSON.stringify({ category: value.category, content: value.content?.replace(/\r\n?/g, "\n").normalize("NFC").trim(), recipient: value.recipient?.normalize("NFC").trim() || null, rules_accepted: value.rules_accepted });
+  const next = { ...draft };
+  if (previous?.request_id && previous.request_id === next.request_id && canonical(previous) !== canonical(next)) delete next.request_id;
+  sessionStorage.setItem(DRAFT_KEY, JSON.stringify(next));
+  return next;
+}
 export function readDraft() { try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; } }
 export function clearDraft() { sessionStorage.removeItem(DRAFT_KEY); }

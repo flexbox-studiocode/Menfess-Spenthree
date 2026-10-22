@@ -1,5 +1,7 @@
 # Content safety and timeline
 
+AI upgrade: [AI-MODERATION.md](AI-MODERATION.md) describes the additive gate after the baseline below. New intake now requires local checks and server AI allow. The former substring-only filter and replaceable term list below describe the earlier version; current rules preserve minimum terms, use word boundaries, and defer ambiguous context to AI. Provider failure creates no message/job. Actual Instagram worker integration and production activation remain separate verified gates.
+
 Migration `20261022040000_content_safety_timeline.sql` adds explicit safety approval metadata. Existing rows are deliberately left with `safety_approved_at = NULL`; even legacy published rows are excluded until trusted server-side revalidation records an approval. Do not manually alter content or status to expose legacy data.
 
 `timeline_messages` is a `security_invoker`, `security_barrier` projection. It exposes only approved rows in public lifecycle states and grants `SELECT` only to `service_role`. Public feed pagination is descending `(created_at, public_id)` and cursors are bound to the requested category.

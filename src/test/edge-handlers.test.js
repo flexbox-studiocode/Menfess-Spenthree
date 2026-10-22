@@ -53,12 +53,26 @@ beforeEach(() => {
   env = Object.fromEntries(["TRACKING_HASH_SECRET", "PAYLOAD_HASH_SECRET", "RECEIPT_ENCRYPTION_SECRET", "SUPABASE_SERVICE_ROLE_KEY"].map((key) => [key, "test-only-not-a-real-secret-".repeat(2)]));
   env.SUPABASE_URL = "https://local-test-placeholder.example";
   env.CORS_ORIGIN = ` ${configured},http://localhost:5173,http://127.0.0.1:5173 `;
-  rpc = vi.fn(async (_name, params) => ({ data: [{
+  Object.assign(env, { GROQ_API_KEY: "synthetic-key", MODERATION_MODEL: "openai/gpt-oss-120b", MODERATION_POLICY_REVISION: "school-v1", MODERATION_REQUESTS_PER_MINUTE: "30", MODERATION_REQUESTS_PER_DAY: "1000", MODERATION_TOKENS_PER_MINUTE: "8000", MODERATION_TOKENS_PER_DAY: "200000" });
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ decision: "allow", reasons: [] }) } }] }))));
+  const receipts = new Map();
+  rpc = vi.fn(async (name, params) => {
+    if (name === "lookup_submit_receipt") {
+      const receipt = receipts.get(params.p_request_id);
+      return { data: receipt ? { ...receipt, payload_hash: receipt.receipt_payload_hash, kind: receipt.receipt_payload_hash === params.p_payload_hash ? "replay" : "conflict" } : { kind: "missing" }, error: null };
+    }
+    if (name === "reserve_moderation") return { data: { kind: "acquired", lease_token: "test-lease" }, error: null };
+    if (name === "reserve_moderation_quota" || name === "finish_moderation") return { data: true, error: null };
+    if (name === "release_moderation") return { data: null, error: null };
+    const receipt = {
     receipt_payload_hash: params.p_payload_hash,
     encrypted_response: params.p_encrypted_response,
     encryption_key_version: params.p_encryption_key_version,
     expires_at: "2999-01-01T00:00:00Z",
-  }], error: null }));
+    };
+    receipts.set(params.p_request_id, receipt);
+    return { data: [receipt], error: null };
+  });
   maybeSingle = vi.fn().mockResolvedValue({ data: { status: "queued" }, error: null });
   eq = vi.fn(() => ({ maybeSingle }));
   select = vi.fn(() => ({ eq }));
@@ -129,6 +143,27 @@ describe.each(["submit", "track"])("%s handler common responses", (name) => {
 });
 
 describe("submit receipts", () => {
+  it.each(["reject", "uncertain"])("blocks AI %s before atomic submit", async decision => {
+    fetch.mockResolvedValue(new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ decision, reasons: ["harassment"] }) } }] })));
+    const response = await submit(request(validSubmission));
+    expect(response.status).toBe(422);
+    expect(rpc.mock.calls.some(([name]) => name === "submit_menfess_atomic")).toBe(false);
+  });
+  it.each(["quota", "busy", "provider", "stale", "missing_key"])("holds publication on moderation failure: %s", async failure => {
+    const original = rpc.getMockImplementation();
+    rpc.mockImplementation(async (name, params) => {
+      if (failure === "quota" && name === "reserve_moderation_quota") return { data: false };
+      if (failure === "busy" && name === "reserve_moderation") return { data: { kind: "busy" } };
+      if (failure === "stale" && name === "finish_moderation") return { data: false };
+      return original(name, params);
+    });
+    if (failure === "provider") fetch.mockRejectedValue(new Error("private upstream detail"));
+    if (failure === "missing_key") delete env.GROQ_API_KEY;
+    const response = await submit(request(validSubmission));
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("MODERATION_UNAVAILABLE");
+    expect(rpc.mock.calls.some(([name]) => name === "submit_menfess_atomic")).toBe(false);
+  });
   it("returns 202 with CORS and round-trips the encrypted RPC receipt", async () => {
     const response = await submit(request(validSubmission));
     expect(response.status).toBe(202);
@@ -138,18 +173,13 @@ describe("submit receipts", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
   it("returns the same receipt when an identical request is retried", async () => {
-    const implementation = rpc.getMockImplementation();
-    let stored;
-    rpc.mockImplementation(async (...args) => stored ??= await implementation(...args));
     const first = await (await submit(request(validSubmission))).json();
+    fetch.mockRejectedValue(new Error("provider down during replay"));
     const retry = await submit(request(validSubmission));
     expect(retry.status).toBe(202);
     expect(await retry.json()).toEqual(first);
   });
   it("returns 409 for an existing request ID with a different payload", async () => {
-    const implementation = rpc.getMockImplementation();
-    let stored;
-    rpc.mockImplementation(async (...args) => stored ??= await implementation(...args));
     await submit(request(validSubmission));
     const response = await submit(request({ ...validSubmission, content: "A different valid message" }));
     expect(response.status).toBe(409);
@@ -160,7 +190,7 @@ describe("submit receipts", () => {
     const implementation = rpc.getMockImplementation();
     rpc.mockImplementation(async (...args) => {
       const result = await implementation(...args);
-      result.data[0].expires_at = "2000-01-01T00:00:00Z";
+      if (args[0] === "submit_menfess_atomic") result.data[0].expires_at = "2000-01-01T00:00:00Z";
       return result;
     });
     const response = await submit(request(validSubmission));
@@ -171,11 +201,13 @@ describe("submit receipts", () => {
   it.each([
     { recipient: "Hubungi user@example.com" },
     { recipient: "ikuti @nama.akun" },
-  ])("rejects unsafe recipient without DB access: %j", async (changes) => {
+  ])("rejects unsafe recipient without writing messages: %j", async (changes) => {
     const response = await submit(request({ ...validSubmission, ...changes }));
     expect(response.status).toBe(422);
     expect((await response.json()).error).toMatchObject({ code: "CONTENT_UNSAFE", fields: { recipient: expect.any(String) } });
-    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][0]).toBe("lookup_submit_receipt");
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("rejects oversized requests before parsing", async () => {
     const response = await submit(request(validSubmission, { headers: { "content-length": "12001" } }));
@@ -219,13 +251,13 @@ describe.each(["submit", "track"])("%s safe DB failures", (name) => {
     rpc.mockResolvedValue({ data: null, error: dbError });
     maybeSingle.mockResolvedValue({ data: null, error: dbError });
     const response = await (name === "submit" ? submit(request(validSubmission)) : track(request({ tracking_code: trackingCode })));
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(name === "submit" ? 503 : 500);
     expectCors(response);
     const body = await response.json();
-    expect(body.error.code).toBe("INTERNAL_ERROR");
+    expect(body.error.code).toBe(name === "submit" ? "MODERATION_UNAVAILABLE" : "INTERNAL_ERROR");
     expect(JSON.stringify(body)).not.toContain(privateText);
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(consoleError.mock.calls[0][0])).toEqual({ request_id: body.error.request_id, stage: name === "submit" ? "rpc_submit" : "lookup_tracking", error_name: "DatabaseError", error_code: "XX000" });
+    expect(JSON.parse(consoleError.mock.calls[0][0])).toEqual(name === "submit" ? { request_id: body.error.request_id, stage: "moderation_replay", error_name: "ModerationUnavailable" } : { request_id: body.error.request_id, stage: "lookup_tracking", error_name: "DatabaseError", error_code: "XX000" });
   });
 });
 
@@ -243,6 +275,8 @@ describe("field validation", () => {
     { recipient: "x".repeat(81) },
     { rules_accepted: false },
     { request_id: "not-a-uuid" },
+    { request_id: [validSubmission.request_id] },
+    { recipient: 123 },
     { unexpected: "field" },
   ])("rejects invalid submit fields %j without DB access", async (changes) => {
     const response = await submit(request({ ...validSubmission, ...changes }));

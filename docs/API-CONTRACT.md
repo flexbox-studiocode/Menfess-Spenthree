@@ -116,3 +116,7 @@ Hanya published boleh memiliki waktu/permalink. Tidak mengembalikan content, rec
 Public feed/detail now return safety-approved messages in `queued`, `processing`, `publishing`, `retry_scheduled`, `published`, or `failed`; `blocked` and unreviewed legacy rows remain hidden. The public projection adds `status` and `created_at`, orders by `(created_at DESC, public_id DESC)`, and never exposes internal IDs, tracking hashes, safety metadata, or job fields. UI must label status honestly and only show Instagram links when present and valid.
 
 Submit applies the same contact/forbidden-term policy to both `content` and non-null `recipient`. Unsafe fields return `422 CONTENT_UNSAFE` and no message or publication job is created.
+
+## AI moderation gate (2026-10-22)
+
+The five-field request and 202 receipt stay unchanged. New submissions require local checks and a server-side Groq allow decision. Reject/uncertain returns 422 CONTENT_UNSAFE; provider/config/quota/lease failures return 503 MODERATION_UNAVAILABLE with Retry-After, without message/job creation. Accepted receipts replay before the newest model/policy, retaining 24-hour expiry/tombstone and 409 conflict semantics. Changed canonical payloads get a new request ID; network retries retain it. Internal approval metadata never enters public projections. Publication starts disabled and requires current policy plus immutable content fingerprint. See [AI moderation runbook](AI-MODERATION.md).

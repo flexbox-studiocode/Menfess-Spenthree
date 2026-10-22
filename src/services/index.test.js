@@ -7,7 +7,6 @@ vi.mock("../lib/supabase.js", () => {
 });
 beforeEach(() => { vi.resetModules(); sessionStorage.clear(); });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
-
 it("defers the backend during draft editing and preserves submit/tracking requests", async () => {
   const { saveDraft, readDraft, clearDraft, submitMenfess, trackMenfess, fetchPublicFeed } = await import("./index.js");
   const draft = { content: "Pesan yang belum dikirim", rules_accepted: true };
@@ -32,4 +31,12 @@ it("defers the backend during draft editing and preserves submit/tracking reques
   expect(loaded).toHaveBeenCalledTimes(1);
   expect(invoke).toHaveBeenNthCalledWith(1, "submit-menfess", { body: payload, signal: expect.any(AbortSignal) });
   expect(invoke).toHaveBeenNthCalledWith(2, "track-menfess", { body: { tracking_code: "SPT-test" }, signal: expect.any(AbortSignal) });
+});
+
+it.each([["CONTENT_UNSAFE", 422, /Pesan belum dapat dikirim/], ["MODERATION_UNAVAILABLE", 503, /Pesan belum dikirim/]])("explains %s without clearing draft", async (code, status, message) => {
+  const { submitMenfess, saveDraft, readDraft } = await import("./index.js");
+  const draft = { content: "Draf harus tetap tersimpan" }; saveDraft(draft);
+  invoke.mockResolvedValue({ data: null, error: { context: { status, json: async () => ({ error: { code } }) } } });
+  await expect(submitMenfess(draft)).rejects.toThrow(message);
+  expect(readDraft()).toEqual(draft);
 });

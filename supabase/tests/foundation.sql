@@ -11,8 +11,11 @@ declare
   caught boolean;
   total integer;
 begin
-  insert into public.messages(request_id, tracking_code_hash, category, content, safety_approved_at, safety_policy_version)
-  values (rid, 'v1:' || repeat('a',64), 'menfess', 'Terima kasih untuk bantuannya.', now(), 'v1:' || repeat('d',64)) returning id, public_id into mid, pubid;
+  update public.moderation_control set active_policy='v1:'||repeat('d',64),publishing_enabled=true;
+  insert into public.moderation_decisions(request_id,payload_hash,policy_version,content_hash,state)
+  values(rid,'v1:'||repeat('c',64),'v1:'||repeat('d',64),public.moderation_fingerprint('menfess',null,'Terima kasih untuk bantuannya.'),'allow');
+  insert into public.messages(request_id, tracking_code_hash, category, content, safety_approved_at, safety_policy_version,safety_content_hash)
+  values (rid, 'v1:' || repeat('a',64), 'menfess', 'Terima kasih untuk bantuannya.', now(), 'v1:' || repeat('d',64),public.moderation_fingerprint('menfess',null,'Terima kasih untuk bantuannya.')) returning id, public_id into mid, pubid;
   select count(*) into total from public.publication_jobs where message_id = mid;
   assert total = 1, 'Queued insert must atomically create one job';
 
@@ -25,13 +28,15 @@ begin
     raise exception 'Orphan job accepted';
   exception when foreign_key_violation then null; end;
   begin
-    insert into public.messages(request_id, tracking_code_hash, category, content)
-    values(rid, 'v1:' || repeat('b',64), 'curhat', 'Konten uji duplikasi.');
+    insert into public.messages(request_id, tracking_code_hash, category, content,safety_approved_at,safety_policy_version,safety_content_hash)
+    values(rid, 'v1:' || repeat('b',64), 'menfess', 'Terima kasih untuk bantuannya.',now(),'v1:'||repeat('d',64),public.moderation_fingerprint('menfess',null,'Terima kasih untuk bantuannya.'));
     raise exception 'Duplicate request accepted';
   exception when unique_violation then null; end;
   begin
-    insert into public.messages(request_id, tracking_code_hash, category, content)
-    values(gen_random_uuid(), 'v1:' || repeat('a',64), 'curhat', 'Konten uji duplikasi.');
+    insert into public.moderation_decisions(request_id,payload_hash,policy_version,content_hash,state)
+    values(gen_random_uuid(),'v1:'||repeat('c',64),'v1:'||repeat('d',64),public.moderation_fingerprint('menfess',null,'Terima kasih untuk bantuannya.'),'allow') returning request_id into rid;
+    insert into public.messages(request_id, tracking_code_hash, category, content,safety_approved_at,safety_policy_version,safety_content_hash)
+    values(rid, 'v1:' || repeat('a',64), 'menfess', 'Terima kasih untuk bantuannya.',now(),'v1:'||repeat('d',64),public.moderation_fingerprint('menfess',null,'Terima kasih untuk bantuannya.'));
     raise exception 'Duplicate tracking hash accepted';
   exception when unique_violation then null; end;
 
@@ -47,10 +52,20 @@ begin
       raise exception 'Invalid content accepted';
     exception when check_violation then null; end;
   end loop;
-  update public.messages set content = repeat('a',10) where id = mid;
-  update public.messages set content = repeat('a',500) where id = mid;
+  select request_id into rid from public.messages where id=mid;
+  foreach invalid_value in array array[repeat('a',10),repeat('a',500)] loop
+    begin
+      update public.messages set content = invalid_value where id = mid;
+      raise exception 'Accepted content was changed';
+    exception when check_violation then null; end;
+  end loop;
   foreach invalid_value in array array['menfess','aspirasi','curhat','apresiasi'] loop
-    update public.messages set category = invalid_value where id = mid;
+    if invalid_value <> 'menfess' then
+      begin
+        update public.messages set category = invalid_value where id = mid;
+        raise exception 'Accepted category was changed';
+      exception when check_violation then null; end;
+    end if;
   end loop;
   begin
     update public.messages set recipient = repeat('a',81) where id = mid;

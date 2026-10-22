@@ -1,5 +1,7 @@
 # K-04 deployment
 
+Before deploying the AI filter upgrade, follow [AI-MODERATION.md](AI-MODERATION.md). Its new migration starts intake policy and Instagram publication gates closed; pause the worker first, configure the exact runtime policy hash, and verify moderation/worker checks before activation. Do not deploy this upgrade using only the earlier K-04 steps below.
+
 Edge Functions:
 
 - `submit-menfess`: anonymous POST, strict validation, atomic RPC, HMAC tracking, encrypted idempotency receipt.

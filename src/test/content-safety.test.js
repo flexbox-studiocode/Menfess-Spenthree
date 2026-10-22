@@ -26,4 +26,10 @@ describe("deterministic content safety", () => {
     const recipient = { ...config, minCodePoints: 1, maxCodePoints: 80 };
     await expect(safetyPolicyVersion(config, recipient)).resolves.not.toBe(await safetyPolicyVersion(config, config));
   });
+  it.each(["Kamu a.n.j.i.n.g sekali", "Kamu 4nj1ng banget", "Kamu anjiiiing sekali", "Kamu an\u200bjing sekali"])("detects disguised direct profanity: %s", async content => {
+    expect(await evaluateContentSafety(content, config)).toMatchObject({ approved: false });
+  });
+  it.each(["Kucing dan anjing itu dirawat dengan baik.", "Aku sedih dan ingin cerita soal bunuh diri untuk tugas pencegahan.", "Bangku kelas ini perlu diperbaiki."])("defers ambiguous context to AI: %s", async content => {
+    expect(await evaluateContentSafety(content, readSafetyConfig(() => undefined))).toMatchObject({ approved: true });
+  });
 });

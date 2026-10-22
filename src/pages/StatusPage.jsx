@@ -25,12 +25,13 @@ export default function StatusPage() {
     finally { if (id === request.current) { checking.current = false; setBusy(false); } }
   }, []);
   const check = event => { event.preventDefault(); checkLatest(code.trim(), true); };
+  useEffect(() => () => { request.current += 1; checking.current = false; }, []);
   useEffect(() => {
     if (!latestCode || ["published", "failed", "blocked"].includes(result?.status)) return undefined;
     const refresh = () => { if (document.visibilityState === "visible") checkLatest(latestCode); };
     document.addEventListener("visibilitychange", refresh);
     const interval = window.setInterval(refresh, 15000);
-    return () => { document.removeEventListener("visibilitychange", refresh); window.clearInterval(interval); request.current += 1; checking.current = false; };
+    return () => { document.removeEventListener("visibilitychange", refresh); window.clearInterval(interval); };
   }, [latestCode, result?.status, checkLatest]);
   const permalink = instagramUrl(result?.ig_permalink);
   const publicationDate = result?.published_at ? new Date(result.published_at) : null;
