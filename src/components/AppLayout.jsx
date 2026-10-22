@@ -9,6 +9,7 @@ const links = [
 ];
 export default function AppLayout() {
   const { pathname } = useLocation();
+  const activeIndex = links.findIndex(({ to }) => pathname === to || (to === "/write" && pathname === "/review"));
   const previousPath = useRef(pathname);
   const main = useRef(null);
   useEffect(() => {
@@ -28,7 +29,8 @@ export default function AppLayout() {
       <span className={styles.school}><span className={styles.schoolCrop}><img src="/design/school.png" alt="SMP Negeri 3 Sokaraja" /></span></span>
     </div></header>
     <main className={styles.main} id="main" ref={main} tabIndex={-1}><Outlet /></main>
-    <nav className={styles.nav} aria-label="Navigasi utama"><div className={styles.navInner}>
+    <nav className={styles.nav} aria-label="Navigasi utama"><div className={styles.navInner} data-active={activeIndex}>
+      <span className={styles.navIndicator} aria-hidden="true"><span /></span>
       {links.map(({ to, label, icon }) => {
         const selected = pathname === to || (to === "/write" && pathname === "/review");
         return <Link key={to} to={to} aria-current={selected ? "page" : undefined} className={styles.link + (selected ? " " + styles.active : "")}>

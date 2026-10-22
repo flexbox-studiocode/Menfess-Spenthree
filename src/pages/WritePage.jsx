@@ -9,6 +9,7 @@ export default function WritePage() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState(() => readDraft() || initial);
   const [error, setError] = useState("");
+  const contentLength = [...draft.content.normalize("NFC")].length;
   const update = (key, value) => setDraft(current => ({ ...current, [key]: value }));
   const submit = event => {
     event.preventDefault();
@@ -26,7 +27,7 @@ export default function WritePage() {
     <form className={styles.writeForm} onSubmit={submit} noValidate>
       <div className={styles.field}><label htmlFor="category">Kategori</label><select id="category" value={draft.category} onChange={e => update("category", e.target.value)}><option value="menfess">Menfess</option><option value="aspirasi">Aspirasi</option><option value="curhat">Curhat</option><option value="apresiasi">Apresiasi</option></select></div>
       <div className={styles.field}><label htmlFor="recipient">Untuk <span>(opsional)</span></label><input id="recipient" value={draft.recipient} onChange={e => update("recipient", e.target.value)} placeholder="Contoh: teman sekelas atau warga Spenthree" /></div>
-      <div className={styles.field}><label htmlFor="content">Isi pesan</label><textarea id="content" required value={draft.content} onChange={e => update("content", e.target.value)} placeholder="Tulis pesanmu di sini..." aria-describedby="content-help content-count" aria-invalid={error.startsWith("Isi") || undefined} /><div className={styles.fieldHelp}><span id="content-help">Minimal 10 karakter</span><span id="content-count">{[...draft.content.normalize("NFC")].length}/500</span></div></div>
+      <div className={styles.field}><label htmlFor="content">Isi pesan</label><textarea id="content" required value={draft.content} onChange={e => update("content", e.target.value)} placeholder="Tulis pesanmu di sini..." aria-describedby="content-help content-count" aria-invalid={error.startsWith("Isi") || undefined} /><div className={styles.fieldHelp}><span id="content-help">Minimal 10 karakter</span><span id="content-count" data-limit={contentLength > 500 ? "over" : contentLength >= 450 ? "near" : "normal"}>{contentLength}/500</span></div></div>
       <PrivacyNotice />
       <RulesAgreement checked={draft.rules_accepted} onChange={e => update("rules_accepted", e.target.checked)} />
       {error && <p className={styles.error} role="alert">{error}</p>}

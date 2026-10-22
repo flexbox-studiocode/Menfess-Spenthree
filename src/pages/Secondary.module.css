@@ -7,8 +7,6 @@
 .actions { display: grid; gap: 13px; margin-top: 18px; }
 .muted { color: #667185; font-size: 10px; font-weight: 600; line-height: 1.5; letter-spacing: .5px; }
 .error { border: 1px solid #b96575; background: #392b38; border-radius: 10px; color: #ffd5dd; padding: 14px; font-size: 12px; line-height: 1.5; }
-.steps { display: flex; align-items: center; gap: 9px; height: 14px; margin: 12px 0 21px; color: #667185; font-size: 10px; font-weight: 600; letter-spacing: .5px; white-space: nowrap; }
-.progress { height: 4px; background: #343782; border-radius: 100px; flex: 1; }
 .preview { min-height: 122px; }
 .previewTop { display: flex; justify-content: space-between; align-items: center; color: #667185; font-size: 10px; font-weight: 600; }
 .badge { border-radius: 3px; background: rgb(74 99 151 / 50%); padding: 4px 6px; color: #9a9cc6; font-size: 8px; font-weight: 600; letter-spacing: .4px; }
@@ -29,6 +27,7 @@
 .label { display: grid; gap: 8px; color: #fff; font-size: 14px; font-weight: 700; }
 .input { box-sizing: border-box; width: 100%; height: 40px; border: 1px solid #394253; border-radius: 10px; background: #222936; color: white; padding: 0 15px; font: inherit; font-size: 14px; font-weight: 500; letter-spacing: .7px; }
 .input::placeholder { color: rgb(102 113 133 / 80%); }
+.input:focus { border-color: #7f83e8; box-shadow: 0 0 0 3px #7f83e81a; }
 .helpLink { display: inline-block; color: #7f83e8; font-size: 10px; font-weight: 300; letter-spacing: .5px; margin-top: 18px; }
 .result { margin-top: 29px; }
 .resultCode { margin: 0 0 14px; color: #8792a6; font-size: 11px; letter-spacing: .55px; overflow-wrap: anywhere; }
@@ -38,7 +37,8 @@
 .timeline li::before { content: ''; width: 7px; height: 7px; position: absolute; left: -33px; top: 4px; border-radius: 50%; background: #9a9cc6; }
 .timeline h3 { font-size: 11px; margin: 0 0 10px; font-weight: 700; }
 .timeline p { font-size: 10px; font-weight: 500; line-height: 1.5; letter-spacing: .4px; color: #8792a6; margin: 0; overflow-wrap: anywhere; }
-.copy { color: white; border: 1px solid #394253; background: transparent; border-radius: 6px; padding: 6px 10px; margin-left: 8px; font: inherit; font-size: 10px; cursor: pointer; }
+.copy { min-width: 86px; color: white; border: 1px solid #394253; background: transparent; border-radius: 6px; padding: 6px 10px; margin-left: 8px; font: inherit; font-size: 10px; cursor: pointer; }
+.copy[data-copied="true"] { color: #c2e9d3; background: #9bd1b510; border-color: #9bd1b555; }
 .resultFooter { font-size: 11px; color: #9a9cc6; }
 .resultFooter a { color: #b8c4ff; }
 .about { margin-top: 12px; min-height: 120px; box-sizing: border-box; }
@@ -66,4 +66,12 @@
 .empty { padding: 22px 15px; font-size: 13px; line-height: 1.5; }
 .empty p { margin-top: 0; }
 @media (min-width: 600px) { .anonymity { margin-top: 40px; } }
-@media (prefers-reduced-motion: no-preference) { .button { transition: background .15s, opacity .15s; } }
+@media (prefers-reduced-motion: no-preference) {
+  .button, .copy { transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-duration), border-color var(--motion-fast), color var(--motion-fast), opacity var(--motion-fast); }
+  .button:active:not(:disabled), .copy:active { transform: scale(.98); }
+  .input { transition: border-color var(--motion-fast), box-shadow var(--motion-fast); }
+  .agreement input:checked { animation: var(--motion-pop); }
+  .error { animation: var(--motion-feedback); }
+  .result { animation: var(--motion-enter); }
+}
+@media (hover: hover) and (pointer: fine) { .button:hover:not(:disabled), .copy:hover { background-color: #404496; } }

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, it, expect, vi } from "vitest";
@@ -44,12 +44,14 @@ describe("preserved menfess integration", () => {
     expect(readDraft()).toEqual(payload);
     await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
     expect(screen.getByRole("button", { name: "Mengirim..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mengirim..." })).toHaveAttribute("aria-busy", "true");
     expect(invoke.mock.calls[1][1].body).toEqual(payload);
     finish({ data: { accepted: true, status: "queued", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Menfess diterima." }, error: null });
     await screen.findByRole("heading", { name: "Status pesan" });
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(screen.getByText("SPT-0123456789ABCDEF0123456789ABCDEF")).toBeInTheDocument();
     expect(screen.getByText("Pesan diterima")).toBeInTheDocument();
+    expect(screen.getByText("Menfess berhasil dikirim")).toBeInTheDocument();
   });
   it("shows missing draft and returns to writing", async () => {
     const user = userEvent.setup(); renderRoute("/review");
@@ -78,6 +80,30 @@ describe("preserved menfess integration", () => {
     await user.click(screen.getByRole("button", { name: "Salin kode" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("secara manual");
     expect(screen.getByText("SPT-test")).toBeInTheDocument();
+  });
+  it("confirms copying only after the clipboard succeeds", async () => {
+    const user = userEvent.setup(); saveDraft(draft);
+    invoke.mockResolvedValue({ data: { status: "queued", tracking_code: "SPT-copy", message: "Diterima" }, error: null });
+    renderRoute("/review");
+    await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
+    await user.click(await screen.findByRole("button", { name: "Salin kode" }));
+    expect(await screen.findByRole("button", { name: /Tersalin/ })).toBeInTheDocument();
+    expect(await navigator.clipboard.readText()).toBe("SPT-copy");
+  });
+  it("marks character limits without blocking typing or changing Unicode counting", async () => {
+    const user = userEvent.setup(); renderRoute("/write");
+    await user.click(screen.getByLabelText("Isi pesan"));
+    await user.paste("😀".repeat(449));
+    expect(screen.getByText("449/500")).toHaveAttribute("data-limit", "normal");
+    await user.type(screen.getByLabelText("Isi pesan"), "😀");
+    expect(screen.getByText("450/500")).toHaveAttribute("data-limit", "near");
+    await user.paste("😀".repeat(50));
+    expect(screen.getByText("500/500")).toHaveAttribute("data-limit", "near");
+    await user.type(screen.getByLabelText("Isi pesan"), "😀");
+    expect(screen.getByText("501/500")).toHaveAttribute("data-limit", "over");
+    await user.click(screen.getByRole("button", { name: "Periksa pesan" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("10–500");
+    expect(invoke).not.toHaveBeenCalled();
   });
   it("tracks with the existing POST contract and real publication fields", async () => {
     const user = userEvent.setup();
@@ -116,5 +142,7 @@ describe("preserved menfess integration", () => {
     expect(screen.getByRole("button", { name: "Aspirasi", exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText(/Linimasa belum tersedia/)).toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole("status")).getByRole("link", { name: "Tulis menfess" }));
+    expect(screen.getByRole("heading", { name: "Tulis menfess" })).toBeInTheDocument();
   });
 });

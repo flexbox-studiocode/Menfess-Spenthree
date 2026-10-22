@@ -25,10 +25,11 @@ export default function StatusPage() {
   const publicationDate = result?.published_at ? new Date(result.published_at) : null;
   const hasDate = publicationDate && !Number.isNaN(publicationDate.getTime());
   return <Page title="Status pesan" description="Cek apakah menfess kamu sudah diproses dan diterbitkan.">
-    <form className={styles.form} onSubmit={check} aria-busy={busy}><label className={styles.label} htmlFor="tracking">Kode pelacakan<input className={styles.input} id="tracking" required value={code} onChange={event => setCode(event.target.value)} placeholder="Contoh: SPT-..." autoComplete="off" autoCapitalize="characters" spellCheck={false} /></label><button className={styles.button} disabled={busy}>{busy ? "Memeriksa..." : "Periksa status"}<img src="/design/search.svg" alt="" /></button></form>
+    <form className={styles.form} onSubmit={check} aria-busy={busy}><label className={styles.label} htmlFor="tracking">Kode pelacakan<input className={styles.input} id="tracking" required value={code} onChange={event => setCode(event.target.value)} placeholder="Contoh: SPT-..." autoComplete="off" autoCapitalize="characters" spellCheck={false} /></label><button className={styles.button} aria-busy={busy} disabled={busy}>{busy ? "Memeriksa..." : "Periksa status"}<span className="motion-icon-slot">{busy ? <span className="motion-spinner" aria-hidden="true" /> : <img src="/design/search.svg" alt="" />}</span></button></form>
     <Link className={styles.helpLink} to="/guide">Lihat panduan menfess dan kode pelacakan</Link>
     {error && <p className={styles.error} role="alert">{error}</p>}
     {result ? <section className={`${styles.card} ${styles.result}`} aria-live="polite" aria-label="Hasil pelacakan">
+      {result === location.state?.submitted && <p className="motion-receipt"><img src="/design/check.svg" alt="" /><span>Menfess berhasil dikirim</span></p>}
       {result.tracking_code && <CopyCode code={result.tracking_code} />}
       <h2>Status menfess</h2><ol className={styles.timeline}><li><h3>{statusLabels[result.status] || "Status belum dikenali"}</h3><p>{result.message}</p></li>{hasDate && <li><h3>Waktu diterbitkan</h3><p><time dateTime={publicationDate.toISOString()}>{publicationDate.toLocaleString("id-ID")}</time></p></li>}</ol>
       {permalink && <a className={`${styles.button} ${styles.secondary}`} href={permalink} target="_blank" rel="noreferrer">Buka Instagram</a>}
@@ -43,5 +44,5 @@ function CopyCode({ code }) {
     try { await navigator.clipboard.writeText(code); setCopied(true); setError(""); }
     catch { setError("Belum dapat menyalin. Pilih dan salin kode di atas secara manual."); }
   };
-  return <div className={styles.resultCode}><code>{code}</code><button className={styles.copy} type="button" onClick={copy}>{copied ? "Tersalin" : "Salin kode"}</button>{error && <p className={styles.error} role="alert">{error}</p>}</div>;
+  return <div className={styles.resultCode}><code>{code}</code><button className={styles.copy} data-copied={copied} type="button" onClick={copy}><span key={copied ? "copied" : "copy"} className="motion-label">{copied && <span className="motion-copy-success" aria-hidden="true">✓</span>}{copied ? "Tersalin" : "Salin kode"}</span></button>{error && <p className={styles.error} role="alert">{error}</p>}</div>;
 }

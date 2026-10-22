@@ -1,6 +1,6 @@
 import styles from "../pages/Page.module.css";
 export function MessageSteps({ review = false }) {
-  return <div className={styles.steps} aria-label={review ? "Langkah 2 dari 2: Periksa pesan" : "Langkah 1 dari 2: Tulis pesan"}>
+  return <div className={styles.steps} data-step={review ? "review" : "write"} aria-label={review ? "Langkah 2 dari 2: Periksa pesan" : "Langkah 1 dari 2: Tulis pesan"}>
     <span>1. Tulis pesan</span><span className={styles.progress} /><span className={styles.progress + (review ? "" : " " + styles.remaining)} /><span>2. Periksa</span>
   </div>;
 }
