@@ -4,8 +4,7 @@
 .brand { display: flex; align-items: center; gap: 5px; min-width: 0; margin-left: -1px; color: var(--ink); text-decoration: none; }
 .identity { display: grid; gap: 3px; font-size: 14px; font-weight: 600; transform: translateY(-2px); }
 .identity > span:last-child { color: var(--muted); font-size: 10px; letter-spacing: .5px; }
-.osis { position: relative; display: block; width: 35px; height: 35px; flex-shrink: 0; overflow: hidden; background: url('/design/brand-circle.svg') center / 34px 34px no-repeat; }
-.osis img { position: absolute; width: 126.22%; height: 100%; max-width: none; left: -17.9%; top: 0; }
+.brandLogo { display: block; width: 35px; height: 35px; flex-shrink: 0; object-fit: contain; border-radius: 6px; }
 .school { position: relative; display: block; width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: url('/design/brand-circle.svg') center no-repeat; }
 .schoolCrop { position: absolute; inset: 1px; border-radius: 50%; overflow: hidden; }
 .school img { position: absolute; width: 112.82%; height: 114.9%; max-width: none; left: -9.57%; top: -8.46%; }

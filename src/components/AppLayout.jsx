@@ -23,7 +23,7 @@ export default function AppLayout() {
     <a className={styles.skip} href="#main">Lewati ke konten</a>
     <header className={styles.header}><div className={styles.headerInner}>
       <Link to="/" className={styles.brand} aria-label="Beranda SAGARA">
-        <span className={styles.osis}><img src="/design/osis.png" alt="" /></span>
+        <img className={styles.brandLogo} src="/design/spenthree-fess-logo.jpg" alt="Spenthree Fess" width="35" height="35" />
         <span className={styles.identity}><span>spenthreeskj_fess</span><span>SMP Negeri 3 Sokaraja</span></span>
       </Link>
       <span className={styles.school}><span className={styles.schoolCrop}><img src="/design/school.png" alt="SMP Negeri 3 Sokaraja" /></span></span>
