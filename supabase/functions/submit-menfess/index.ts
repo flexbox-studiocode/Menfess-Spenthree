@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
       }
       return Array.isArray(data) ? data[0] : data;
     };
-    stage = "moderation_replay";
+    stage = "direct_replay";
     const existing = await call("lookup_submit_receipt", { p_request_id: request_id, p_payload_hash: payloadHash });
     if (existing.kind === "conflict") return fail("IDEMPOTENCY_CONFLICT", 409);
     if (existing.kind === "expired") return fail("RECEIPT_EXPIRED", 409);
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       const bytes = typeof encoded === "string" ? Uint8Array.from((encoded.replace(/^\\x/, "").match(/.{1,2}/g) ?? []).map(part => parseInt(part, 16))) : new Uint8Array(encoded as number[]);
       const receipt = JSON.parse(await decrypt(receiptSecret!, bytes, `${request_id}:${data.encryption_key_version}`));
       if (typeof receipt.tracking_code !== "string" || !["queued", "pending_moderation"].includes(receipt.status)) throw new Error("Invalid receipt");
-      return json({ accepted: true, tracking_code: receipt.tracking_code, status: receipt.status, message: "Pesan tersimpan. Pemeriksaan otomatis berjalan di belakang layar. Simpan kode pelacakanmu." }, 202, cors);
+      return json({ accepted: true, tracking_code: receipt.tracking_code, status: receipt.status, message: "Pesan berhasil disimpan dan diterbitkan ke linimasa. Simpan kode pelacakanmu." }, 200, cors);
     };
     if (existing.kind === "replay") return await reply({ ...existing, receipt_payload_hash: existing.payload_hash });
     if (existing.kind !== "missing") throw new ModerationUnavailable();
@@ -82,29 +82,15 @@ Deno.serve(async (req) => {
     stage = "encrypt_receipt";
     const tracking = code(), trackingHash = `v1:${await hmac(trackingSecret!, tracking)}`;
     const version = "v1";
-    const encrypted = await encrypt(receiptSecret!, JSON.stringify({ tracking_code: tracking, status: "pending_moderation" }), `${request_id}:${version}`);
-    stage = "rpc_intake";
-    const result = await call("enqueue_moderation_intake", { p_request_id: request_id, p_tracking_code_hash: trackingHash,
-      p_input: { category, recipient: rec, content: normalized }, p_payload_hash: payloadHash,
+    const encrypted = await encrypt(receiptSecret!, JSON.stringify({ tracking_code: tracking, status: "queued" }), `${request_id}:${version}`);
+    stage = "direct_publication";
+    const result = await call("submit_menfess_direct_atomic", { p_request_id: request_id, p_tracking_code_hash: trackingHash,
+      p_category: category, p_recipient: rec, p_content: normalized, p_payload_hash: payloadHash,
       p_encrypted_response: `\\x${hex(encrypted)}`, p_encryption_key_version: version });
     if (result.kind === "conflict") return fail("IDEMPOTENCY_CONFLICT", 409);
     if (result.kind === "expired") return fail("RECEIPT_EXPIRED", 409);
-    if (result.kind === "full") return fail("QUEUE_FULL", 503);
-    if (!["accepted", "replay"].includes(result.kind)) throw new ModerationUnavailable();
-    if (result.kind === "accepted") {
-      const workerSecret = Deno.env.get("MODERATION_WORKER_SECRET");
-      const runtime = globalThis as typeof globalThis & { EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void } };
-      if (workerSecret && workerSecret.length >= 32 && typeof runtime.EdgeRuntime?.waitUntil === "function") {
-        runtime.EdgeRuntime.waitUntil(
-          fetch(`${supabaseUrl}/functions/v1/process-moderation-queue`, {
-            method: "POST",
-            headers: { authorization: `Bearer ${workerSecret}` },
-            signal: AbortSignal.timeout(5000),
-          }).catch((cause) => logFailure(rid, "moderation_trigger", cause)),
-        );
-      }
-    }
-    return await reply({ ...result, receipt_payload_hash: result.payload_hash });
+    if (result.receipt_payload_hash !== payloadHash) return fail("IDEMPOTENCY_CONFLICT", 409);
+    return await reply({ ...result, receipt_payload_hash: result.receipt_payload_hash });
   } catch (cause) {
     logFailure(rid, stage, cause);
     if (cause instanceof ModerationUnavailable) return json({ error: { code: "MODERATION_UNAVAILABLE", message: "Penyimpanan pesan sedang tidak tersedia. Pesan belum dikirim.", request_id: rid } }, 503, { ...cors, "retry-after": String(cause.retryAfter) });

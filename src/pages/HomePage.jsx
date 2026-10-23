@@ -37,7 +37,7 @@ export default function HomePage() {
     load();
     const refresh = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", refresh);
-    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 15000);
+    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 5000);
     return () => { document.removeEventListener("visibilitychange", refresh); window.clearInterval(interval); request.current += 1; activeController.current?.abort(); };
   }, [load]);
 

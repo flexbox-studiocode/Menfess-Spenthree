@@ -34,7 +34,7 @@ export default function ReviewPage() {
   return <Page title="Periksa pesan" description="Pastikan isi pesan sudah sesuai sebelum dikirim." backTo="/write" backLabel="Ubah pesan" onBack={edit}>
     <MessageSteps review />
     <article className={`${styles.card} ${styles.preview} motion-message`}><div className={styles.previewTop}><span>Anonim</span><span className={styles.badge}>{labels[draft.category] || draft.category}</span></div><h2 className={styles.recipient}>{draft.recipient ? `Untuk: ${draft.recipient}` : "Untuk warga Spenthree"}</h2><p className={styles.message}>{draft.content}</p></article>
-    <div className={styles.queue}><img className={styles.security} src="/design/security.svg" alt="" /><p className={styles.muted}>Pesan masuk ke antrean validasi otomatis. Pesan belum langsung tampil di beranda.</p></div>
+    <div className={styles.queue}><img className={styles.security} src="/design/security.svg" alt="" /><p className={styles.muted}>Pesan divalidasi dan diterbitkan ke linimasa setelah penyimpanan berhasil.</p></div>
     {error && <p className={styles.error} role="alert">{error}</p>}
     <div className={styles.actions}><button className={styles.button} aria-busy={busy} disabled={busy || !draft.rules_accepted} onClick={send}>{busy ? "Mengirim pesan..." : "Kirim Menfess"}<span className="motion-icon-slot">{busy ? <span className="motion-spinner" aria-hidden="true" /> : <img src="/design/plane.svg" alt="" />}</span></button><button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={edit}>Ubah Pesan</button></div>
     <p className={styles.muted}>Jika koneksi terputus, kirim ulang pesan yang sama. Jangan membuat draf baru.</p>

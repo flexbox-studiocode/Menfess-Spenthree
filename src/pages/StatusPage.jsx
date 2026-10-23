@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import Page from "./Page.jsx";
 import styles from "./Secondary.module.css";
 import { trackMenfess } from "../services/index.js";
-const statusLabels = { pending_moderation: "Pesan tersimpan — menunggu pemeriksaan otomatis", queued: "Menunggu diproses", processing: "Sedang diproses", publishing: "Sedang dipublikasikan", published: "Pesan telah diterbitkan", retry_scheduled: "Menunggu dicoba lagi", failed: "Gagal dipublikasikan", blocked: "Tidak dapat diproses" };
+const statusLabels = { pending_moderation: "Pesan tersimpan", queued: "Pesan telah diterbitkan ke linimasa", processing: "Pesan telah diterbitkan ke linimasa", publishing: "Pesan telah diterbitkan ke linimasa", published: "Pesan telah diterbitkan", retry_scheduled: "Pesan telah diterbitkan ke linimasa", failed: "Gagal diproses", blocked: "Tidak dapat diproses" };
 function instagramUrl(value) {
   try { const url = new URL(value); return url.protocol === "https:" && (url.hostname === "instagram.com" || url.hostname === "www.instagram.com") ? url.href : null; } catch { return null; }
 }
