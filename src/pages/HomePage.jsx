@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import Page from "./Page.jsx";
 import styles from "./Page.module.css";
 import { fetchPublicFeed } from "../services/index.js";
+import { getVoterId } from "../lib/voterId.js";
+import LikeButton from "../components/LikeButton.jsx";
 
 const categories = [{ label: "Semua", slug: undefined }, { label: "Menfess", slug: "menfess" }, { label: "Aspirasi", slug: "aspirasi" }, { label: "Curhat", slug: "curhat" }, { label: "Apresiasi", slug: "apresiasi" }];
 const dateFormatter = new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short" });
@@ -35,7 +37,7 @@ export default function HomePage() {
     const shouldClear = !append && isInitialLoad.current;
     setFeed((old) => ({ ...old, status: append ? "more" : shouldClear ? "loading" : "refreshing", error: "", errorKind: "", ...(shouldClear ? { items: [], cursor: null } : {}) }));
     try {
-      const result = await fetchPublicFeed({ category: active.slug, limit: 20, cursor, signal: controller.signal });
+      const result = await fetchPublicFeed({ category: active.slug, limit: 20, cursor, signal: controller.signal, voterId: getVoterId() });
       if (id !== request.current) return;
       isInitialLoad.current = false;
 
@@ -115,7 +117,7 @@ export default function HomePage() {
       {feed.status === "refreshing" && <div className={styles.feedState} role="status" aria-live="polite" style={{ padding: "8px", fontSize: "0.875rem", opacity: 0.7 }}>Memperbarui…</div>}
       {feed.status === "error" && feed.items.length > 0 && feed.errorKind === "refresh" && <div className={styles.feedState} role="alert" style={{ padding: "8px", fontSize: "0.875rem" }}><p style={{ margin: 0 }}>Gagal memperbarui. <button type="button" onClick={() => load()} style={{ background: "none", border: "none", color: "inherit", textDecoration: "underline", cursor: "pointer" }}>Coba lagi</button></p></div>}
       {feed.status === "error" && feed.items.length > 0 && feed.errorKind === "pagination" && <div className={styles.feedState} role="alert" style={{ padding: "8px", fontSize: "0.875rem" }}><p style={{ margin: 0 }}>Gagal memuat halaman berikutnya: {feed.error}</p></div>}
-      {feed.items.length > 0 && <div className={styles.feedList}>{feed.items.map((item) => <article className={styles.feedCard} key={item.public_id}><div className={styles.cardMeta}><span>{item.category} · {statusLabels[item.status] || "Status belum dikenali"}</span><time dateTime={displayDate(item)}>{dateFormatter.format(new Date(displayDate(item)))}</time></div>{item.recipient && <p className={styles.recipient}>Untuk: {item.recipient}</p>}<p className={styles.feedContent}>{item.content}</p><div className={styles.cardLinks}><Link to={`/menfess/${item.public_id}`}>Lihat detail</Link>{validInstagram(item.ig_permalink) && <a href={item.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</div></article>)}</div>}
+      {feed.items.length > 0 && <div className={styles.feedList}>{feed.items.map((item) => <article className={styles.feedCard} key={item.public_id}><div className={styles.cardMeta}><span>{item.category} · {statusLabels[item.status] || "Status belum dikenali"}</span><time dateTime={displayDate(item)}>{dateFormatter.format(new Date(displayDate(item)))}</time></div>{item.recipient && <p className={styles.recipient}>Untuk: {item.recipient}</p>}<p className={styles.feedContent}>{item.content}</p><div className={styles.cardLinks}><LikeButton item={item} onChange={(next) => setFeed(old => ({...old, items: old.items.map(x => x.public_id === next.public_id ? next : x)}))} /><Link to={`/menfess/${item.public_id}`}>Lihat detail</Link>{validInstagram(item.ig_permalink) && <a href={item.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</div></article>)}</div>}
       {feed.cursor && (feed.status !== "error" || feed.errorKind === "pagination") && <button className={`${styles.button} ${styles.loadMore}`} type="button" disabled={feed.status === "more"} onClick={() => load({ append: true, cursor: feed.cursor })}>{feed.status === "more" ? "Memuat…" : feed.errorKind === "pagination" ? "Coba muat lagi" : "Muat lagi"}</button>}
     </section>
   </Page>;

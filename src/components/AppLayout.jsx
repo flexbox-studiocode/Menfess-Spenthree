@@ -4,6 +4,7 @@ import styles from "./AppLayout.module.css";
 const links = [
   { to: "/", label: "Beranda", icon: "home" },
   { to: "/write", label: "Tulis", icon: "write" },
+  { to: "/leaderboard", label: "Peringkat", icon: "status" },
   { to: "/status", label: "Status", icon: "status" },
   { to: "/guide", label: "Panduan", icon: "guide" },
 ];

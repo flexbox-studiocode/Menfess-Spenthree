@@ -7,6 +7,7 @@ import ReviewPage from "./pages/ReviewPage.jsx";
 import StatusPage from "./pages/StatusPage.jsx";
 import DetailPage from "./pages/DetailPage.jsx";
 import GuidePage from "./pages/GuidePage.jsx";
+import LeaderboardPage from "./pages/LeaderboardPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="status" element={<StatusPage />} />
         <Route path="menfess/:id" element={<DetailPage />} />
         <Route path="guide" element={<GuidePage />} />
+        <Route path="leaderboard" element={<LeaderboardPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

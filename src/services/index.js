@@ -34,11 +34,13 @@ function userError(code, status) {
   return "Permintaan belum dapat diproses. Coba lagi dengan request yang sama.";
 }
 
-async function invoke(name, body, timeoutMs = 15000) {
+async function invoke(name, body, timeoutMs = 15000, externalSignal) {
   const { getSupabaseClient } = await import("../lib/supabase.js");
   const client = getSupabaseClient();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort(externalSignal?.reason);
+  externalSignal?.addEventListener("abort", abort, { once: true });
   try {
     if (new TextEncoder().encode(JSON.stringify(body)).byteLength > MAX_PAYLOAD_BYTES) throw new Error("Payload terlalu besar.");
     const { data, error } = await client.functions.invoke(name, { body, signal: controller.signal });
@@ -55,7 +57,7 @@ async function invoke(name, body, timeoutMs = 15000) {
   } catch (error) {
     if (error instanceof TypeError || error?.message?.toLowerCase().includes("failed to fetch")) throw new Error("Koneksi atau CORS gagal. Pastikan URL Supabase dan origin frontend benar.");
     throw error;
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); externalSignal?.removeEventListener("abort", abort); }
 }
 
 export function submitMenfess(payload) { return invoke("submit-menfess", payload, 20000); }
@@ -93,11 +95,17 @@ async function fetchPublicFunction(name, params, signal) {
   }
 }
 
-export function fetchPublicFeed({ category, limit = 20, cursor, signal } = {}) {
-  return fetchPublicFunction("public-feed", { category, limit, cursor }, signal);
+export function fetchPublicFeed({ category, limit = 20, cursor, signal, voterId } = {}) {
+  return fetchPublicFunction("public-feed", { category, limit, cursor, voter_id: voterId }, signal);
 }
-export function fetchPublicMenfess(publicId, signal) {
-  return fetchPublicFunction("public-menfess", { id: publicId }, signal);
+export function fetchPublicMenfess(publicId, signal, voterId) {
+  return fetchPublicFunction("public-menfess", { id: publicId, voter_id: voterId }, signal);
+}
+export function setMessageLike(publicId, voterId, liked, signal) {
+  return invoke("set-message-like", { public_id: publicId, voter_id: voterId, liked }, 15000, signal);
+}
+export function fetchLeaderboard(period, signal) {
+  return fetchPublicFunction("public-leaderboard", { period, limit: 10 }, signal);
 }
 
 export const DRAFT_KEY = "menfess-spenthree-draft";
