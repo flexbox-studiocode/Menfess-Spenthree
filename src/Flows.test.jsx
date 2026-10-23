@@ -93,11 +93,11 @@ describe("preserved menfess integration", () => {
     expect(screen.getByRole("button", { name: "Mengirim pesan..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Mengirim pesan..." })).toHaveAttribute("aria-busy", "true");
     expect(invoke.mock.calls[1][1].body).toEqual(payload);
-    finish({ data: { accepted: true, status: "pending_moderation", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Pesan tersimpan." }, error: null });
+    finish({ data: { accepted: true, status: "published", tracking_code: "SPT-0123456789ABCDEF0123456789ABCDEF", message: "Pesan tersimpan." }, error: null });
     await screen.findByRole("heading", { name: "Status pesan" });
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(screen.getByText("SPT-0123456789ABCDEF0123456789ABCDEF")).toBeInTheDocument();
-    expect(screen.getByText("Pesan tersimpan — menunggu pemeriksaan otomatis")).toBeInTheDocument();
+    expect(screen.getByText("Pesan telah diterbitkan")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Buka Instagram/ })).not.toBeInTheDocument();
     expect(screen.getByText("Menfess berhasil dikirim")).toBeInTheDocument();
   });

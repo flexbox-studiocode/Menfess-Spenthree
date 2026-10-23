@@ -76,7 +76,7 @@ beforeEach(() => {
     receipts.set(params.p_request_id, receipt);
     return { data: [receipt], error: null };
   });
-  maybeSingle = vi.fn().mockResolvedValue({ data: { status: "queued" }, error: null });
+  maybeSingle = vi.fn().mockResolvedValue({ data: { status: "published" }, error: null });
   eq = vi.fn(() => ({ maybeSingle }));
   select = vi.fn(() => ({ eq }));
   from = vi.fn(() => ({ select }));
@@ -146,36 +146,28 @@ describe.each(["submit", "track"])("%s handler common responses", (name) => {
 });
 
 describe("submit receipts", () => {
-  it("accepts immediately without AI even when the provider is down and its key is missing", async () => {
+  it("publishes directly without AI even when the provider is down and its key is missing", async () => {
     delete env.GROQ_API_KEY;
     fetch.mockRejectedValue(new Error("provider unavailable"));
     const response = await submit(request(validSubmission));
-    expect(response.status).toBe(202);
-    expect((await response.json()).status).toBe("pending_moderation");
+    expect(response.status).toBe(200);
+    expect((await response.json()).status).toBe("published");
     expect(fetch).not.toHaveBeenCalled();
-    expect(rpc.mock.calls.map(([name]) => name)).toEqual(["lookup_submit_receipt", "enqueue_moderation_intake"]);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(["lookup_submit_receipt", "submit_menfess_direct_atomic"]);
   });
-  it("does not return fake success when the private queue is full", async () => {
-    const original = rpc.getMockImplementation();
-    rpc.mockImplementation((name, params) => name === "enqueue_moderation_intake" ? { data: { kind: "full" } } : original(name, params));
+  it("publishes directly with local deterministic validation", async () => {
     const response = await submit(request(validSubmission));
-    expect(response.status).toBe(503);
-    expect((await response.json()).error.code).toBe("QUEUE_FULL");
-    expect(fetch).not.toHaveBeenCalled();
-  });
-  it("returns 202 with CORS and round-trips the encrypted RPC receipt", async () => {
-    const response = await submit(request(validSubmission));
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(200);
     expectCors(response);
-    expect(await response.json()).toMatchObject({ accepted: true, status: "pending_moderation", tracking_code: expect.stringMatching(/^SPT-[A-F0-9]{32}$/) });
-    expect(rpc).toHaveBeenCalledWith("enqueue_moderation_intake", expect.objectContaining({ p_request_id: validSubmission.request_id, p_input: { category: validSubmission.category, recipient: null, content: validSubmission.content }, p_tracking_code_hash: expect.stringMatching(/^v1:[a-f0-9]{64}$/) }));
+    expect(await response.json()).toMatchObject({ accepted: true, status: "published", tracking_code: expect.stringMatching(/^SPT-[A-F0-9]{32}$/) });
+    expect(rpc).toHaveBeenCalledWith("submit_menfess_direct_atomic", expect.objectContaining({ p_request_id: validSubmission.request_id, p_input: { category: validSubmission.category, recipient: null, content: validSubmission.content }, p_tracking_code_hash: expect.stringMatching(/^v1:[a-f0-9]{64}$/) }));
     expect(consoleError).not.toHaveBeenCalled();
   });
   it("returns the same receipt when an identical request is retried", async () => {
     const first = await (await submit(request(validSubmission))).json();
     fetch.mockRejectedValue(new Error("provider down during replay"));
     const retry = await submit(request(validSubmission));
-    expect(retry.status).toBe(202);
+    expect(retry.status).toBe(200);
     expect(await retry.json()).toEqual(first);
   });
   it("returns 409 for an existing request ID with a different payload", async () => {
@@ -189,7 +181,7 @@ describe("submit receipts", () => {
     const implementation = rpc.getMockImplementation();
     rpc.mockImplementation(async (...args) => {
       const result = await implementation(...args);
-      if (args[0] === "enqueue_moderation_intake") result.data[0].expires_at = "2000-01-01T00:00:00Z";
+      if (args[0] === "submit_menfess_direct_atomic") result.data[0].expires_at = "2000-01-01T00:00:00Z";
       return result;
     });
     const response = await submit(request(validSubmission));
@@ -261,10 +253,10 @@ describe.each(["submit", "track"])("%s safe DB failures", (name) => {
     expect(response.status).toBe(name === "submit" ? 503 : 500);
     expectCors(response);
     const body = await response.json();
-    expect(body.error.code).toBe(name === "submit" ? "MODERATION_UNAVAILABLE" : "INTERNAL_ERROR");
+    expect(body.error.code).toBe(name === "submit" ? "PUBLICATION_UNAVAILABLE" : "INTERNAL_ERROR");
     expect(JSON.stringify(body)).not.toContain(privateText);
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(consoleError.mock.calls[0][0])).toEqual(name === "submit" ? { request_id: body.error.request_id, stage: "moderation_replay", error_name: "ModerationUnavailable" } : { request_id: body.error.request_id, stage: "lookup_tracking", error_name: "DatabaseError", error_code: "XX000" });
+    expect(JSON.parse(consoleError.mock.calls[0][0])).toEqual(name === "submit" ? { request_id: body.error.request_id, stage: "direct_replay", error_name: "PublicationUnavailable" } : { request_id: body.error.request_id, stage: "lookup_tracking", error_name: "DatabaseError", error_code: "XX000" });
   });
 });
 
