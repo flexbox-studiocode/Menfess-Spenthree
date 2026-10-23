@@ -44,7 +44,13 @@ Deno.serve(async (req) => {
     const db = createClient(supabaseUrl!, serviceKey!);
     const call = async (name: string, params: Record<string, unknown>) => {
       const { data, error: dbError } = await db.rpc(name, params);
-      if (dbError || data == null) throw new ModerationUnavailable();
+      if (dbError || data == null) {
+        const failure = new Error("Database RPC failed") as Error & { code?: string; rpc?: string };
+        failure.name = "DatabaseRpcError";
+        failure.code = dbError?.code;
+        failure.rpc = name;
+        throw failure;
+      }
       return Array.isArray(data) ? data[0] : data;
     };
     stage = "moderation_replay";

@@ -27,9 +27,9 @@ export const corsForRequest = (request: Request): Record<string, string> => {
 
 // Never log error messages/details: upstream errors can contain private payloads.
 export const logFailure = (requestId: string, stage: string, cause: unknown) => {
-  const value = cause as { name?: unknown; code?: unknown } | null;
+  const value = cause as { name?: unknown; code?: unknown; rpc?: unknown } | null;
   const safeToken = (token: unknown) => typeof token === "string" && /^[A-Za-z0-9_]{1,48}$/.test(token) ? token : undefined;
-  console.error(JSON.stringify({ request_id: requestId, stage, error_name: safeToken(value?.name), error_code: safeToken(value?.code) }));
+  console.error(JSON.stringify({ request_id: requestId, stage, error_name: safeToken(value?.name), error_code: safeToken(value?.code), rpc: safeToken(value?.rpc) }));
 };
 
 export const json = (body: unknown, status = 200, extra: Record<string,string> = {}) =>
