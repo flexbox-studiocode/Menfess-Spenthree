@@ -16,7 +16,7 @@ create or replace function public.set_message_like(p_public_id uuid, p_voter_has
 returns table(like_count bigint, liked_by_me boolean) language plpgsql security definer set search_path = public as $$
 declare mid uuid;
 begin
- select m.id into mid from messages m join timeline_messages t on t.public_id=m.public_id where m.public_id=p_public_id and m.status='published';
+ select m.id into mid from messages m join timeline_messages t on t.public_id=m.public_id where m.public_id=p_public_id and exists (select 1 from timeline_messages t where t.public_id = m.public_id);
  if mid is null then raise exception 'not public'; end if;
  if p_liked then insert into message_likes(message_id,voter_hash) values(mid,p_voter_hash) on conflict do nothing;
  else delete from message_likes where message_id=mid and voter_hash=p_voter_hash; end if;
@@ -27,7 +27,7 @@ grant execute on function public.set_message_like(uuid,text,boolean) to service_
 create or replace function public.public_leaderboard(p_since timestamptz, p_limit integer)
 returns table(public_id uuid, category text, recipient text, content text, created_at timestamptz, like_count bigint)
 language sql security definer set search_path = public as $$
- select t.public_id,t.category,t.recipient,t.content,t.created_at,count(l.id)::bigint from timeline_messages t join messages m on m.public_id=t.public_id left join message_likes l on l.message_id=m.id and (p_since is null or l.created_at>=p_since) where m.status='published' group by t.public_id,t.category,t.recipient,t.content,t.created_at order by count(l.id) desc,t.created_at desc,t.public_id desc limit least(p_limit,10);
+ select t.public_id,t.category,t.recipient,t.content,t.created_at,count(l.id)::bigint from timeline_messages t join messages m on m.public_id=t.public_id left join message_likes l on l.message_id=m.id and (p_since is null or l.created_at>=p_since) where exists (select 1 from timeline_messages tv where tv.public_id=m.public_id) group by t.public_id,t.category,t.recipient,t.content,t.created_at order by count(l.id) desc,t.created_at desc,t.public_id desc limit least(p_limit,10);
 $$;
 revoke all on function public.public_leaderboard(timestamptz,integer) from public, anon, authenticated;
 grant execute on function public.public_leaderboard(timestamptz,integer) to service_role;

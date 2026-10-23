@@ -16,7 +16,7 @@ export const corsForRequest = (request: Request): Record<string, string> => {
     } catch { return false; }
   })]);
   const headers: Record<string, string> = {
-    "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
+    "access-control-allow-headers": "authorization, x-client-info, apikey, content-type, x-voter-id",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "cache-control": "no-store",
     "vary": "Origin",

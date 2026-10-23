@@ -38,6 +38,9 @@ async function invoke(name, body, timeoutMs = 15000, externalSignal) {
   const { getSupabaseClient } = await import("../lib/supabase.js");
   const client = getSupabaseClient();
   const controller = new AbortController();
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  if (params.__voterId) headers["x-voter-id"] = params.__voterId;
+  delete params.__voterId;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort(externalSignal?.reason);
   externalSignal?.addEventListener("abort", abort, { once: true });
@@ -67,14 +70,17 @@ async function fetchPublicFunction(name, params, signal) {
   const { url, key } = readSupabaseConfig();
   const endpoint = new URL(`/functions/v1/${name}`, url);
   Object.entries(params).forEach(([field, value]) => {
-    if (value !== undefined && value !== null && value !== "") endpoint.searchParams.set(field, String(value));
+    if (!field.startsWith("__") && value !== undefined && value !== null && value !== "") endpoint.searchParams.set(field, String(value));
   });
   const controller = new AbortController();
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  if (params.__voterId) headers["x-voter-id"] = params.__voterId;
+  delete params.__voterId;
   const timeout = setTimeout(() => controller.abort(), 15000);
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abort, { once: true });
   try {
-    const response = await fetch(endpoint, { method: "GET", headers: { apikey: key, Authorization: `Bearer ${key}` }, signal: controller.signal });
+    const response = await fetch(endpoint, { method: "GET", headers, signal: controller.signal });
     let body;
     try { body = await response.json(); } catch { throw new Error("Respons backend tidak valid."); }
     if (!response.ok) {
@@ -96,10 +102,10 @@ async function fetchPublicFunction(name, params, signal) {
 }
 
 export function fetchPublicFeed({ category, limit = 20, cursor, signal, voterId } = {}) {
-  return fetchPublicFunction("public-feed", { category, limit, cursor, voter_id: voterId }, signal);
+  return fetchPublicFunction("public-feed", { category, limit, cursor, __voterId: voterId }, signal);
 }
 export function fetchPublicMenfess(publicId, signal, voterId) {
-  return fetchPublicFunction("public-menfess", { id: publicId, voter_id: voterId }, signal);
+  return fetchPublicFunction("public-menfess", { id: publicId, __voterId: voterId }, signal);
 }
 export function setMessageLike(publicId, voterId, liked, signal) {
   return invoke("set-message-like", { public_id: publicId, voter_id: voterId, liked }, 15000, signal);

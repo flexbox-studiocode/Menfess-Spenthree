@@ -2,9 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsForRequest, error, json, logFailure } from "../_shared/http.ts";
 
 const categories = new Set(["menfess", "aspirasi", "curhat", "apresiasi"]);
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const columns = "public_id,category,recipient,content,status,created_at,published_at,ig_permalink";
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type Cursor = { v: 1; category: string | null; created_at: string; public_id: string };
 
 const encodeCursor = (value: Cursor) => btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
