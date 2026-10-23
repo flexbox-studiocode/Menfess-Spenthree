@@ -35,7 +35,7 @@ function expectCors(response, origin = configured) {
   expect(response.headers.get("vary")).toBe("Origin");
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
-  expect(response.headers.get("access-control-allow-headers")).toBe("authorization, x-client-info, apikey, content-type");
+  expect(response.headers.get("access-control-allow-headers")).toBe("authorization, x-client-info, apikey, content-type, x-voter-id");
 }
 
 beforeAll(async () => {
@@ -151,7 +151,7 @@ describe("submit receipts", () => {
     fetch.mockRejectedValue(new Error("provider unavailable"));
     const response = await submit(request(validSubmission));
     expect(response.status).toBe(200);
-    expect((await response.json()).status).toBe("published");
+    expect((await response.json()).status).toBe("queued");
     expect(fetch).not.toHaveBeenCalled();
     expect(rpc.mock.calls.map(([name]) => name)).toEqual(["lookup_submit_receipt", "submit_menfess_direct_atomic"]);
   });
@@ -159,8 +159,8 @@ describe("submit receipts", () => {
     const response = await submit(request(validSubmission));
     expect(response.status).toBe(200);
     expectCors(response);
-    expect(await response.json()).toMatchObject({ accepted: true, status: "published", tracking_code: expect.stringMatching(/^SPT-[A-F0-9]{32}$/) });
-    expect(rpc).toHaveBeenCalledWith("submit_menfess_direct_atomic", expect.objectContaining({ p_request_id: validSubmission.request_id, p_input: { category: validSubmission.category, recipient: null, content: validSubmission.content }, p_tracking_code_hash: expect.stringMatching(/^v1:[a-f0-9]{64}$/) }));
+    expect(await response.json()).toMatchObject({ accepted: true, status: "queued", tracking_code: expect.stringMatching(/^SPT-[A-F0-9]{32}$/) });
+    expect(rpc).toHaveBeenCalledWith("submit_menfess_direct_atomic", expect.objectContaining({ p_request_id: validSubmission.request_id, p_category: validSubmission.category, p_recipient: null, p_content: validSubmission.content, p_tracking_code_hash: expect.stringMatching(/^v1:[a-f0-9]{64}$/) }));
     expect(consoleError).not.toHaveBeenCalled();
   });
   it("returns the same receipt when an identical request is retried", async () => {
@@ -253,10 +253,10 @@ describe.each(["submit", "track"])("%s safe DB failures", (name) => {
     expect(response.status).toBe(name === "submit" ? 503 : 500);
     expectCors(response);
     const body = await response.json();
-    expect(body.error.code).toBe(name === "submit" ? "PUBLICATION_UNAVAILABLE" : "INTERNAL_ERROR");
+    expect(body.error.code).toBe(name === "submit" ? "MODERATION_UNAVAILABLE" : "INTERNAL_ERROR");
     expect(JSON.stringify(body)).not.toContain(privateText);
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(consoleError.mock.calls[0][0])).toEqual(name === "submit" ? { request_id: body.error.request_id, stage: "direct_replay", error_name: "PublicationUnavailable" } : { request_id: body.error.request_id, stage: "lookup_tracking", error_name: "DatabaseError", error_code: "XX000" });
+    expect(JSON.parse(consoleError.mock.calls[0][0])).toEqual(name === "submit" ? { request_id: body.error.request_id, stage: "direct_replay", error_name: "ModerationUnavailable" } : { request_id: body.error.request_id, stage: "lookup_tracking", error_name: "DatabaseError", error_code: "XX000" });
   });
 });
 

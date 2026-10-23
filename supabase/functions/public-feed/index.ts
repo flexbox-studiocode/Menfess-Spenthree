@@ -1,8 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsForRequest, error, json, logFailure } from "../_shared/http.ts";
+import { addLikeSummary } from "../_shared/likes.ts";
 
 const categories = new Set(["menfess", "aspirasi", "curhat", "apresiasi"]);
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const columns = "public_id,category,recipient,content,status,created_at,published_at,ig_permalink";
 type Cursor = { v: 1; category: string | null; created_at: string; public_id: string };
 
 const encodeCursor = (value: Cursor) => btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
@@ -51,9 +53,12 @@ Deno.serve(async (req) => {
     const { data, error: dbError } = await query;
     if (dbError) throw dbError;
     const rows = (data ?? []).slice(0, limit);
+    const voterId = req.headers.get("x-voter-id");
+    if (voterId && !uuid.test(voterId)) return fail("VALIDATION_ERROR", 400);
+    const enrichedRows = await addLikeSummary(db, rows, voterId);
     const last = rows.at(-1);
     const next = (data?.length ?? 0) > limit && last ? encodeCursor({ v: 1, category, created_at: new Date(last.created_at).toISOString(), public_id: last.public_id }) : null;
-    return json({ data: rows, next_cursor: next }, 200, cors);
+    return json({ data: enrichedRows, next_cursor: next }, 200, cors);
   } catch (cause) {
     logFailure(rid, stage, cause);
     return fail("INTERNAL_ERROR", 500);

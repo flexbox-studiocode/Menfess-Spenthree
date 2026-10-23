@@ -38,9 +38,6 @@ async function invoke(name, body, timeoutMs = 15000, externalSignal) {
   const { getSupabaseClient } = await import("../lib/supabase.js");
   const client = getSupabaseClient();
   const controller = new AbortController();
-  const headers = { apikey: key, Authorization: `Bearer ${key}` };
-  if (params.__voterId) headers["x-voter-id"] = params.__voterId;
-  delete params.__voterId;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort(externalSignal?.reason);
   externalSignal?.addEventListener("abort", abort, { once: true });
@@ -69,13 +66,13 @@ export function trackMenfess(trackingCode) { return invoke("track-menfess", { tr
 async function fetchPublicFunction(name, params, signal) {
   const { url, key } = readSupabaseConfig();
   const endpoint = new URL(`/functions/v1/${name}`, url);
-  Object.entries(params).forEach(([field, value]) => {
+  const queryParams = { ...params };
+  Object.entries(queryParams).forEach(([field, value]) => {
     if (!field.startsWith("__") && value !== undefined && value !== null && value !== "") endpoint.searchParams.set(field, String(value));
   });
   const controller = new AbortController();
   const headers = { apikey: key, Authorization: `Bearer ${key}` };
-  if (params.__voterId) headers["x-voter-id"] = params.__voterId;
-  delete params.__voterId;
+  if (queryParams.__voterId) headers["x-voter-id"] = queryParams.__voterId;
   const timeout = setTimeout(() => controller.abort(), 15000);
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abort, { once: true });
