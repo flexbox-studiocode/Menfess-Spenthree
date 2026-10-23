@@ -15,16 +15,20 @@ export default function HomePage() {
   const [feed, setFeed] = useState({ status: "loading", items: [], cursor: null, error: "" });
   const request = useRef(0);
   const activeController = useRef(null);
+  const isInitialLoad = useRef(true);
   const load = useCallback(async ({ append = false, cursor } = {}) => {
     // Do not start a second feed request while a refresh or pagination request is pending.
     if (activeController.current) return;
     const id = ++request.current;
     const controller = new AbortController();
     activeController.current = controller;
-    setFeed((old) => ({ ...old, status: append ? "more" : "loading", error: "", ...(append ? {} : { items: [], cursor: null }) }));
+    // Preserve items during background refresh; only clear on initial load or pagination
+    const shouldClear = !append && isInitialLoad.current;
+    setFeed((old) => ({ ...old, status: append ? "more" : "loading", error: "", ...(shouldClear ? { items: [], cursor: null } : {}), ...(append ? {} : { cursor: null }) }));
     try {
       const result = await fetchPublicFeed({ category: active.slug, limit: 20, cursor, signal: controller.signal });
       if (id !== request.current) return;
+      isInitialLoad.current = false;
       setFeed((old) => ({ status: "success", items: append ? [...new Map([...old.items, ...result.data].map((item) => [item.public_id, item])).values()] : result.data, cursor: result.next_cursor, error: "" }));
     } catch (error) {
       if (id !== request.current || error?.name === "AbortError") return;
@@ -34,22 +38,26 @@ export default function HomePage() {
     }
   }, [active.slug]);
   useEffect(() => {
+    // Reset initial load flag when active category changes
+    isInitialLoad.current = true;
     load();
     const refresh = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", refresh);
-    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 5000);
+    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 10000);
     return () => { document.removeEventListener("visibilitychange", refresh); window.clearInterval(interval); request.current += 1; activeController.current?.abort(); };
-  }, [load]);
+  }, [active.slug, load]);
 
   return <Page home title="Menfess Spenthree" description="Pesan dan cerita dari warga sekolah.">
     <section className={styles.hero}><h2>Ada yang ingin<br />kamu sampaikan?</h2><p>Titip pesan, cerita hari ini, atau beri apresiasi. Kamu juga bisa menyampaikan aspirasi ke OSIS.</p><Link className={styles.heroButton} to="/write">Tulis menfess<img src="/design/write.svg" alt="" /></Link></section>
     <p className={styles.security}><img src="/design/security.svg" alt="" /><span>Nama pengirim tidak ditampilkan. Semua menfess divalidasi sebelum tayang.</span></p>
     <section className={styles.feed} aria-labelledby="feed-heading">
       <div className={styles.feedHeading}><h2 id="feed-heading">Linimasa</h2><span>Terbaru</span></div>
-      <div className={styles.categories} data-active={categories.indexOf(active)} role="group" aria-label="Kategori linimasa">{categories.map((item) => <button key={item.label} type="button" aria-pressed={active.slug === item.slug} onClick={() => setActive(item)}>{item.label}</button>)}</div>
-      {feed.status === "loading" && <div className={styles.feedState} role="status" aria-live="polite">Memuat linimasa…</div>}
-      {feed.status === "error" && <div className={styles.feedState} role="alert"><p>{feed.error}</p><button className={styles.button} type="button" onClick={() => load()}>Coba lagi</button></div>}
+      <div className={styles.categories} data-active={categories.indexOf(active)} role="group" aria-label="Kategori linimasa">{categories.map((item) => <button key={item.label} type="button" aria-pressed={active.slug === item.slug} onClick={() => { isInitialLoad.current = true; setActive(item); }}>{item.label}</button>)}</div>
+      {feed.status === "loading" && feed.items.length === 0 && <div className={styles.feedState} role="status" aria-live="polite">Memuat linimasa…</div>}
+      {feed.status === "error" && feed.items.length === 0 && <div className={styles.feedState} role="alert"><p>{feed.error}</p><button className={styles.button} type="button" onClick={() => load()}>Coba lagi</button></div>}
       {feed.status === "success" && feed.items.length === 0 && <div className={styles.empty} role="status"><span className={styles.emptyIcon} aria-hidden="true"><img src="/design/write.svg" alt="" /></span><h3>Belum ada menfess di linimasa</h3><p>Pesan yang lolos pemeriksaan keamanan akan muncul di sini beserta status publikasinya.</p><Link className={`${styles.button} ${styles.emptyCta}`} to="/write">Tulis menfess<img src="/design/arrow.svg" alt="" /></Link></div>}
+      {feed.status === "loading" && feed.items.length > 0 && <div className={styles.feedState} role="status" aria-live="polite" style={{ padding: "8px", fontSize: "0.875rem", opacity: 0.7 }}>Memperbarui…</div>}
+      {feed.status === "error" && feed.items.length > 0 && <div className={styles.feedState} role="alert" style={{ padding: "8px", fontSize: "0.875rem" }}><p style={{ margin: 0 }}>Gagal memperbarui. <button type="button" onClick={() => load()} style={{ background: "none", border: "none", color: "inherit", textDecoration: "underline", cursor: "pointer" }}>Coba lagi</button></p></div>}
       {feed.items.length > 0 && <div className={styles.feedList}>{feed.items.map((item) => <article className={styles.feedCard} key={item.public_id}><div className={styles.cardMeta}><span>{item.category} · {statusLabels[item.status] || "Status belum dikenali"}</span><time dateTime={displayDate(item)}>{dateFormatter.format(new Date(displayDate(item)))}</time></div>{item.recipient && <p className={styles.recipient}>Untuk: {item.recipient}</p>}<p className={styles.feedContent}>{item.content}</p><div className={styles.cardLinks}><Link to={`/menfess/${item.public_id}`}>Lihat detail</Link>{validInstagram(item.ig_permalink) && <a href={item.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</div></article>)}</div>}
       {feed.cursor && feed.status !== "error" && <button className={`${styles.button} ${styles.loadMore}`} type="button" disabled={feed.status === "more"} onClick={() => load({ append: true, cursor: feed.cursor })}>{feed.status === "more" ? "Memuat…" : "Muat lagi"}</button>}
     </section>
