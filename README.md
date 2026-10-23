@@ -54,7 +54,7 @@ Pada mesin baru:
 ```powershell
 npx supabase login
 npx supabase projects list
-npx supabase link --project-ref tjhzcyeifrxyukcrpfsi
+npx supabase link --project-ref 
 npx supabase migration list --linked
 npx supabase db push --linked --dry-run
 npx supabase db push --linked
