@@ -45,11 +45,7 @@ Deno.serve(async (req) => {
     const call = async (name: string, params: Record<string, unknown>) => {
       const { data, error: dbError } = await db.rpc(name, params);
       if (dbError || data == null) {
-        const failure = new Error("Database RPC failed") as Error & { code?: string; rpc?: string };
-        failure.name = "DatabaseRpcError";
-        failure.code = dbError?.code;
-        failure.rpc = name;
-        throw failure;
+        throw new ModerationUnavailable();
       }
       return Array.isArray(data) ? data[0] : data;
     };
@@ -95,6 +91,19 @@ Deno.serve(async (req) => {
     if (result.kind === "expired") return fail("RECEIPT_EXPIRED", 409);
     if (result.kind === "full") return fail("QUEUE_FULL", 503);
     if (!["accepted", "replay"].includes(result.kind)) throw new ModerationUnavailable();
+    if (result.kind === "accepted") {
+      const workerSecret = Deno.env.get("MODERATION_WORKER_SECRET");
+      const runtime = globalThis as typeof globalThis & { EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void } };
+      if (workerSecret && workerSecret.length >= 32 && typeof runtime.EdgeRuntime?.waitUntil === "function") {
+        runtime.EdgeRuntime.waitUntil(
+          fetch(`${supabaseUrl}/functions/v1/process-moderation-queue`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${workerSecret}` },
+            signal: AbortSignal.timeout(5000),
+          }).catch((cause) => logFailure(rid, "moderation_trigger", cause)),
+        );
+      }
+    }
     return await reply({ ...result, receipt_payload_hash: result.payload_hash });
   } catch (cause) {
     logFailure(rid, stage, cause);
