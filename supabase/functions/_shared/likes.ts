@@ -1,8 +1,8 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function addLikeSummary(db: ReturnType<typeof createClient>, rows: Array<{ public_id: string }>, voterId: string | null) {
+export async function addLikeSummary(db: SupabaseClient, rows: Array<{ public_id: string }>, voterId: string | null) {
   const result = rows.map((row) => ({ ...row, like_count: 0, liked_by_me: false }));
   if (!rows.length) return result;
   const ids = rows.map((row) => row.public_id);

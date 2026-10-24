@@ -5,10 +5,10 @@ import styles from "./Page.module.css";
 import { fetchPublicMenfess } from "../services/index.js";
 import { getVoterId } from "../lib/voterId.js";
 import LikeButton from "../components/LikeButton.jsx";
+import { deliveryLabels } from "../lib/publicationStatus.js";
 
 const dateFormatter = new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short" });
 const validInstagram = (value) => { try { const url = new URL(value); return url.protocol === "https:" && (url.hostname === "instagram.com" || url.hostname === "www.instagram.com"); } catch { return false; } };
-const statusLabels = { queued: "Menunggu diproses", processing: "Sedang diproses", publishing: "Sedang dipublikasikan", retry_scheduled: "Menunggu dicoba lagi", published: "Telah diterbitkan", failed: "Gagal dipublikasikan" };
 
 export default function DetailPage() {
   const { id } = useParams();
@@ -41,6 +41,6 @@ export default function DetailPage() {
     {state.status === "loading" && <section className={styles.feedState} role="status">Memuat detail menfess…</section>}
     {state.status === "not-found" && <section className={styles.feedState}><h2>Menfess tidak tersedia</h2><p>Pesan tidak ditemukan atau tidak tersedia di linimasa.</p><Link className={styles.button} to="/">Kembali ke linimasa</Link></section>}
     {state.status === "error" && <section className={styles.feedState} role="alert"><h2>Detail gagal dimuat</h2><p>{state.error}</p><button className={styles.button} type="button" onClick={retry}>Coba lagi</button></section>}
-    {state.status === "success" && <article className={`${styles.feedCard} ${styles.detailCard}`}><div className={styles.cardMeta}><span>{state.data.category} · {statusLabels[state.data.status] || "Status belum dikenali"}</span><time dateTime={state.data.created_at || state.data.published_at}>{dateFormatter.format(new Date(state.data.created_at || state.data.published_at))}</time></div>{state.data.recipient && <p className={styles.recipient}>Untuk: {state.data.recipient}</p>}<p className={styles.feedContent}>{state.data.content}</p><LikeButton item={state.data} onChange={(next) => setState(old => ({...old, data: next}))} />{validInstagram(state.data.ig_permalink) && <a href={state.data.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</article>}
+    {state.status === "success" && <article className={`${styles.feedCard} ${styles.detailCard}`}><div className={styles.cardMeta}><span>{state.data.category} · Website: tampil · {deliveryLabels[state.data.delivery_status || state.data.status] || "Instagram: status belum diketahui"}</span><time dateTime={state.data.created_at || state.data.published_at}>{dateFormatter.format(new Date(state.data.created_at || state.data.published_at))}</time></div>{state.data.recipient && <p className={styles.recipient}>Untuk: {state.data.recipient}</p>}<p className={styles.feedContent}>{state.data.content}</p><LikeButton item={state.data} onChange={(next) => setState(old => ({...old, data: { ...old.data, liked_by_me: next.liked_by_me, like_count: next.like_count }}))} />{(state.data.delivery_status || state.data.status) === "published" && validInstagram(state.data.ig_permalink) && <a href={state.data.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</article>}
   </Page>;
 }

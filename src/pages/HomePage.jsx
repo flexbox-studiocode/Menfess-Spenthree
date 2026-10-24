@@ -5,12 +5,13 @@ import styles from "./Page.module.css";
 import { fetchPublicFeed } from "../services/index.js";
 import { getVoterId } from "../lib/voterId.js";
 import LikeButton from "../components/LikeButton.jsx";
+import { deliveryLabels } from "../lib/publicationStatus.js";
+import { mergeFirstPage } from "../lib/feedMerge.js";
 
 const categories = [{ label: "Semua", slug: undefined }, { label: "Menfess", slug: "menfess" }, { label: "Aspirasi", slug: "aspirasi" }, { label: "Curhat", slug: "curhat" }, { label: "Apresiasi", slug: "apresiasi" }];
 const dateFormatter = new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short" });
 const validInstagram = (value) => { try { const url = new URL(value); return url.protocol === "https:" && (url.hostname === "instagram.com" || url.hostname === "www.instagram.com"); } catch { return false; } };
 const displayDate = (item) => item.created_at || item.published_at;
-const statusLabels = { queued: "Menunggu diproses", processing: "Sedang diproses", publishing: "Sedang dipublikasikan", retry_scheduled: "Menunggu dicoba lagi", published: "Telah diterbitkan", failed: "Gagal dipublikasikan" };
 
 export default function HomePage() {
   const [active, setActive] = useState(categories[0]);
@@ -47,25 +48,15 @@ export default function HomePage() {
           const merged = [...new Map([...old.items, ...result.data].map((item) => [item.public_id, item])).values()];
           return { ...old, status: "success", items: merged, cursor: result.next_cursor, error: "", errorKind: "" };
         } else {
-          // Background refresh: merge existing with new items, preserving cursor if user hasn't scrolled far
           const scrollY = window.scrollY || window.pageYOffset || 0;
-          const isUserReadingBelow = scrollY > scrollThreshold;
-
-          if (isUserReadingBelow && old.items.length > 0) {
-            // User scrolled down; hold new items that aren't already visible
-            const existingIds = new Set(old.items.map((item) => item.public_id));
-            const newItems = result.data.filter((item) => !existingIds.has(item.public_id));
-            if (newItems.length > 0) {
-              setPendingItems(newItems);
-            }
-            // Keep existing items and cursor stable
-            return { ...old, status: "success", error: "" };
-          } else {
-            // User at top or initial load: merge all items
-            const merged = [...new Map([...result.data, ...old.items].map((item) => [item.public_id, item])).values()];
-            setPendingItems([]);
-            return { ...old, status: "success", items: merged, cursor: result.next_cursor, error: "", errorKind: "" };
-          }
+          const holdNew = scrollY > scrollThreshold && old.items.length > 0;
+          const merged = mergeFirstPage(old.items, result.data, result.next_cursor, holdNew);
+          setPendingItems(merged.pending);
+          // Keep the loaded-page cursor when retaining older pages, rather than
+          // resetting pagination to page two after every background refresh.
+          const firstIds = new Set(result.data.map(item => item.public_id));
+          const hasOlderPages = merged.items.some(item => !firstIds.has(item.public_id));
+          return { ...old, status: "success", items: merged.items, cursor: hasOlderPages ? old.cursor : result.next_cursor, error: "", errorKind: "" };
         }
       });
     } catch (error) {
@@ -79,7 +70,8 @@ export default function HomePage() {
   const loadPendingItems = useCallback(() => {
     if (pendingItems.length === 0) return;
     setFeed((old) => {
-      const merged = [...new Map([...pendingItems, ...old.items].map((item) => [item.public_id, item])).values()];
+      const pendingIds = new Set(pendingItems.map(item => item.public_id));
+      const merged = [...pendingItems, ...old.items.filter(item => !pendingIds.has(item.public_id))];
       return { ...old, items: merged };
     });
     setPendingItems([]);
@@ -117,7 +109,7 @@ export default function HomePage() {
       {feed.status === "refreshing" && <div className={styles.feedState} role="status" aria-live="polite" style={{ padding: "8px", fontSize: "0.875rem", opacity: 0.7 }}>Memperbarui…</div>}
       {feed.status === "error" && feed.items.length > 0 && feed.errorKind === "refresh" && <div className={styles.feedState} role="alert" style={{ padding: "8px", fontSize: "0.875rem" }}><p style={{ margin: 0 }}>Gagal memperbarui. <button type="button" onClick={() => load()} style={{ background: "none", border: "none", color: "inherit", textDecoration: "underline", cursor: "pointer" }}>Coba lagi</button></p></div>}
       {feed.status === "error" && feed.items.length > 0 && feed.errorKind === "pagination" && <div className={styles.feedState} role="alert" style={{ padding: "8px", fontSize: "0.875rem" }}><p style={{ margin: 0 }}>Gagal memuat halaman berikutnya: {feed.error}</p></div>}
-      {feed.items.length > 0 && <div className={styles.feedList}>{feed.items.map((item) => <article className={styles.feedCard} key={item.public_id}><div className={styles.cardMeta}><span>{item.category} · {statusLabels[item.status] || "Status belum dikenali"}</span><time dateTime={displayDate(item)}>{dateFormatter.format(new Date(displayDate(item)))}</time></div>{item.recipient && <p className={styles.recipient}>Untuk: {item.recipient}</p>}<p className={styles.feedContent}>{item.content}</p><div className={styles.cardLinks}><LikeButton item={item} onChange={(next) => setFeed(old => ({...old, items: old.items.map(x => x.public_id === next.public_id ? next : x)}))} /><Link to={`/menfess/${item.public_id}`}>Lihat detail</Link>{validInstagram(item.ig_permalink) && <a href={item.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</div></article>)}</div>}
+      {feed.items.length > 0 && <div className={styles.feedList}>{feed.items.map((item) => <article className={styles.feedCard} key={item.public_id}><div className={styles.cardMeta}><span>{item.category} · Website: tampil · {deliveryLabels[item.delivery_status || item.status] || "Instagram: status belum diketahui"}</span><time dateTime={displayDate(item)}>{dateFormatter.format(new Date(displayDate(item)))}</time></div>{item.recipient && <p className={styles.recipient}>Untuk: {item.recipient}</p>}<p className={styles.feedContent}>{item.content}</p><div className={styles.cardLinks}><LikeButton item={item} onChange={(next) => setFeed(old => ({...old, items: old.items.map(x => x.public_id === next.public_id ? { ...x, liked_by_me: next.liked_by_me, like_count: next.like_count } : x)}))} /><Link to={`/menfess/${item.public_id}`}>Lihat detail</Link>{(item.delivery_status || item.status) === "published" && validInstagram(item.ig_permalink) && <a href={item.ig_permalink} target="_blank" rel="noreferrer">Lihat di Instagram</a>}</div></article>)}</div>}
       {feed.cursor && (feed.status !== "error" || feed.errorKind === "pagination") && <button className={`${styles.button} ${styles.loadMore}`} type="button" disabled={feed.status === "more"} onClick={() => load({ append: true, cursor: feed.cursor })}>{feed.status === "more" ? "Memuat…" : feed.errorKind === "pagination" ? "Coba muat lagi" : "Muat lagi"}</button>}
     </section>
   </Page>;

@@ -2,6 +2,7 @@
 import { webcrypto } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { corsForRequest, logFailure } from "../../supabase/functions/_shared/http.ts";
+import { encrypt, hex } from "../../supabase/functions/_shared/crypto.ts";
 
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock("https://esm.sh/@supabase/supabase-js@2", () => ({ createClient: mocks.createClient }));
@@ -76,10 +77,11 @@ beforeEach(() => {
     receipts.set(params.p_request_id, receipt);
     return { data: [receipt], error: null };
   });
-  maybeSingle = vi.fn().mockResolvedValue({ data: { status: "published" }, error: null });
+  maybeSingle = vi.fn().mockResolvedValue({ data: { request_id: validSubmission.request_id, status: "queued", web_status: "visible", web_published_at: "2026-01-01T00:00:00Z" }, error: null });
   eq = vi.fn(() => ({ maybeSingle }));
   select = vi.fn(() => ({ eq }));
-  from = vi.fn(() => ({ select }));
+  from = vi.fn(table => table === "messages" ? { select }
+    : { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: table === "moderation_decisions" ? { state: "evaluating" } : table === "moderation_control" ? { active_policy: "current-policy" } : { state: "pending" }, error: null }) })) })) });
   mocks.createClient.mockReset().mockReturnValue({ rpc, from });
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -146,6 +148,24 @@ describe.each(["submit", "track"])("%s handler common responses", (name) => {
 });
 
 describe("submit receipts", () => {
+  it("never claims legacy pending receipts are visible without a current message", async () => {
+    const encrypted = await encrypt(env.RECEIPT_ENCRYPTION_SECRET, JSON.stringify({ tracking_code: trackingCode, status: "pending_moderation" }), `${validSubmission.request_id}:v1`);
+    rpc.mockImplementation(async (name, params) => ({ data: name === "track_moderation_intake" ? null : { kind: "replay", payload_hash: params.p_payload_hash, encrypted_response: `\\x${hex(encrypted)}`, encryption_key_version: "v1", expires_at: "2999-01-01T00:00:00Z" }, error: null }));
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+    const response = await submit(request(validSubmission));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "pending_moderation", web_status: "hidden", moderation_status: "pending", delivery_status: null });
+    expect(from).not.toHaveBeenCalledWith("moderation_decisions");
+    const original = rpc.getMockImplementation();
+    rpc.mockImplementation((name, params) => name === "track_moderation_intake" ? { data: { status: "blocked" }, error: null } : original(name, params));
+    expect(await (await submit(request(validSubmission))).json()).toMatchObject({ status: "blocked", web_status: "hidden", moderation_status: "blocked", delivery_status: null });
+  });
+  it("reports the current persisted status when a receipt is replayed after delivery", async () => {
+    await submit(request(validSubmission));
+    maybeSingle.mockResolvedValue({ data: { status: "published", web_status: "hidden" }, error: null });
+    const response = await submit(request(validSubmission));
+    expect(await response.json()).toMatchObject({ status: "published", delivery_status: "published", web_status: "hidden" });
+  });
   it("publishes directly without AI even when the provider is down and its key is missing", async () => {
     delete env.GROQ_API_KEY;
     fetch.mockRejectedValue(new Error("provider unavailable"));
@@ -215,14 +235,42 @@ describe("submit receipts", () => {
 });
 
 describe("tracking lookup", () => {
+  it.each([
+    { state: "blocked", decision: null, expected: "blocked" },
+    { state: "approved", decision: { state: "allow", policy_version: "old-policy", content_hash: "content-hash" }, expected: "pending" },
+    { state: "approved", decision: { state: "allow", policy_version: "current-policy", content_hash: "stale-content" }, expected: "pending" },
+    { state: "pending", decision: { state: "allow", policy_version: "current-policy", content_hash: "content-hash", payload_hash: "wrong-payload" }, expected: "pending" },
+    { state: "pending", decision: { state: "allow", policy_version: "current-policy", content_hash: "content-hash", payload_hash: "payload-hash" }, expected: "pending" },
+    { state: "approved", decision: { state: "allow", policy_version: "current-policy", content_hash: "content-hash", payload_hash: "payload-hash" }, expected: "approved" },
+  ])("reports truthful job/decision status $expected", async ({ state, decision, expected }) => {
+    maybeSingle.mockResolvedValue({ data: { id: "message-id", status: "queued", web_status: state === "blocked" ? "hidden" : "visible", safety_content_hash: "content-hash" }, error: null });
+    const originalFrom = from.getMockImplementation();
+    from.mockImplementation(table => table === "messages" ? originalFrom(table) : { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table === "moderation_decisions" ? decision : table === "moderation_control" ? { active_policy: "current-policy" } : { state, payload_hash: "payload-hash" }, error: null }) }) }) });
+    expect(await (await track(request({ tracking_code: trackingCode }))).json()).toMatchObject({ moderation_status: expected, delivery_status: "queued" });
+    // Receipt replay uses the same persisted moderation truth, not receipt status.
+    expect(await (await submit(request(validSubmission))).json()).toMatchObject({ moderation_status: expected, delivery_status: "queued" });
+  });
+  it.each(["allow", "reject", "uncertain", "evaluating"])("uses authoritative decision %s and withholds hidden public IDs and private data", async state => {
+    maybeSingle.mockResolvedValue({ data: { request_id: validSubmission.request_id, status: "queued", public_id: "hidden-id", web_status: "hidden", safety_content_hash: "content-hash", content: "private", tracking_code_hash: "private-hash" }, error: null });
+    const messageFrom = from.getMockImplementation();
+    from.mockImplementation(table => table === "moderation_decisions"
+      ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { state, policy_version: "current-policy", content_hash: "content-hash", reasons: ["private-reason"] }, error: null }) }) }) }
+      : table === "message_moderation_jobs" ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }
+      : messageFrom(table));
+    const response = await track(request({ tracking_code: trackingCode }));
+    const body = await response.json();
+    expect(body).toMatchObject({ web_status: "hidden", delivery_status: "queued", moderation_status: state === "allow" ? "approved" : state === "evaluating" ? "pending" : "blocked" });
+    expect(body).not.toHaveProperty("public_id");
+    expect(JSON.stringify(body)).not.toMatch(/private|hidden-id|request_id/);
+  });
   it.each(["queued", "published"])("returns %s with CORS and only public status fields", async (status) => {
-    maybeSingle.mockResolvedValue({ data: { status, published_at: "2026-01-01T00:00:00Z", ig_permalink: "https://instagram.com/p/test", content: "private" }, error: null });
+    maybeSingle.mockResolvedValue({ data: { request_id: validSubmission.request_id, public_id: "public-test", status, web_status: "visible", web_published_at: "2026-01-01T00:00:00Z", published_at: "2026-01-01T00:00:00Z", ig_permalink: "https://instagram.com/p/test", content: "private" }, error: null });
     const response = await track(request({ tracking_code: trackingCode }));
     expect(response.status).toBe(200);
     expectCors(response);
-    expect(await response.json()).toEqual({ status, message: expect.any(String), published_at: status === "published" ? "2026-01-01T00:00:00Z" : null, ig_permalink: status === "published" ? "https://instagram.com/p/test" : null });
+    expect(await response.json()).toEqual({ status, delivery_status: status, web_status: "visible", moderation_status: "pending", public_id: "public-test", web_published_at: "2026-01-01T00:00:00Z", message: expect.any(String), published_at: status === "published" ? "2026-01-01T00:00:00Z" : null, ig_permalink: status === "published" ? "https://instagram.com/p/test" : null });
     expect(from).toHaveBeenCalledWith("messages");
-    expect(select).toHaveBeenCalledWith("status,published_at,ig_permalink");
+    expect(select).toHaveBeenCalledWith("id,request_id,public_id,status,web_status,web_published_at,published_at,ig_permalink,safety_content_hash");
     expect(eq).toHaveBeenCalledWith("tracking_code_hash", expect.stringMatching(/^v1:[a-f0-9]{64}$/));
   });
   it.each(["pending_moderation", "blocked"])("tracks private intake %s without returning content", async status => {
@@ -231,7 +279,7 @@ describe("tracking lookup", () => {
     rpc.mockImplementation((name, params) => name === "track_moderation_intake" ? { data: { status, content: "private" } } : original(name, params));
     const response = await track(request({ tracking_code: trackingCode }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status, message: expect.any(String), published_at: null, ig_permalink: null });
+    expect(await response.json()).toEqual({ status, web_status: "hidden", moderation_status: status === "blocked" ? "blocked" : "pending", delivery_status: null, message: expect.any(String), published_at: null, ig_permalink: null });
   });
   it("returns 404 only when the lookup succeeds without a row", async () => {
     maybeSingle.mockResolvedValue({ data: null, error: null });

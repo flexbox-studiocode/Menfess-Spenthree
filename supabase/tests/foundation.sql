@@ -10,6 +10,8 @@ declare
   invalid_value text;
   caught boolean;
   total integer;
+  publication_job uuid;
+  publication_token uuid;
 begin
   update public.moderation_control set active_policy='v1:'||repeat('d',64),publishing_enabled=true;
   insert into public.moderation_decisions(request_id,payload_hash,policy_version,content_hash,state)
@@ -120,7 +122,12 @@ begin
     update public.messages set status = 'published' where id = mid;
     raise exception 'Publication without confirmation accepted';
   exception when check_violation then null; end;
-  update public.messages set status = 'published', published_at = now(), ig_media_id = '999999999999999999' where id = mid;
+  select id into publication_job from public.publication_jobs where message_id=mid;
+  publication_token:=gen_random_uuid();
+  update public.publication_jobs set status='processing',locked_at=clock_timestamp(),
+    lease_expires_at=clock_timestamp()+interval '4 minutes',lock_token=publication_token where id=publication_job;
+  assert public.prepare_ai_publication(publication_job,publication_token,'v1:'||repeat('d',64));
+  assert public.complete_publication_job(publication_job,publication_token,'999999999999999999',null);
   assert exists(select 1 from public.published_messages where public_id = pubid), 'Published record missing';
   begin
     update public.messages set status = 'queued', published_at = null where id = mid;

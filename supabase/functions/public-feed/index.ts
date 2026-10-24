@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     const enrichedRows = await addLikeSummary(db, rows, voterId);
     const last = rows.at(-1);
     const next = (data?.length ?? 0) > limit && last ? encodeCursor({ v: 1, category, created_at: new Date(last.created_at).toISOString(), public_id: last.public_id }) : null;
-    return json({ data: enrichedRows, next_cursor: next }, 200, cors);
+    return json({ data: enrichedRows.map((row, index) => ({ ...row, web_status: "visible", delivery_status: rows[index].status })), next_cursor: next }, 200, cors);
   } catch (cause) {
     logFailure(rid, stage, cause);
     return fail("INTERNAL_ERROR", 500);

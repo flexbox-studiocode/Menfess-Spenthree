@@ -19,7 +19,17 @@ begin
   update public.publication_jobs set ambiguous_at=clock_timestamp() where id=jid;
   select count(*) into total from public.claim_publication_jobs(3,240);
   assert total=0,'Ambiguous publication was retried';
-  update public.publication_jobs set ambiguous_at=null where id=jid;
+  assert (select status='failed' and last_error_code='PUBLISH_AMBIGUOUS' from public.publication_jobs where id=jid),
+    'Ambiguous queued job was not quarantined';
+  -- Explicit test-only reconciliation: no network publication occurred in this fixture.
+  update public.publication_jobs set ambiguous_at=null,status='queued' where id=jid;
+  -- The original message is terminal failed. A new approved fixture exercises claims.
+  rid:=gen_random_uuid();
+  insert into public.moderation_decisions(request_id,payload_hash,policy_version,content_hash,state)
+  values(rid,'v1:'||repeat('b',64),policy,public.moderation_fingerprint('menfess',null,content),'allow');
+  insert into public.messages(request_id,tracking_code_hash,category,content,safety_approved_at,safety_policy_version,safety_content_hash)
+  values(rid,'v1:'||repeat('d',64),'menfess',content,now(),policy,public.moderation_fingerprint('menfess',null,content)) returning id into mid;
+  select id into jid from public.publication_jobs where message_id=mid;
   select count(*) into total from public.claim_publication_jobs(3,240);
   assert total=1,'Current approved job missing';
   select count(*) into total from public.claim_publication_jobs(3,240);

@@ -24,11 +24,21 @@ Deno.serve(async req => {
     };
     for (let i = 0; i < 3; i++) {
       // Claim one at a time so a quota stop does not strand the rest of a batch.
-      const jobs = await call("claim_moderation_intake", { p_limit: 1 });
-      if (!Array.isArray(jobs)) throw new ModerationUnavailable();
-      const job = jobs[0];
+      const sources = i % 2 === 0 ? ["message", "intake"] : ["intake", "message"];
+      let job;
+      let source;
+      for (const candidate of sources) {
+        const jobs = await call(candidate === "message" ? "claim_message_moderation_jobs" : "claim_moderation_intake",
+          candidate === "message" ? { p_limit: 1, p_policy_version: policy } : { p_limit: 1 });
+        if (!Array.isArray(jobs)) throw new ModerationUnavailable();
+        if (jobs[0]) { job = jobs[0]; source = candidate; break; }
+      }
       if (!job) break;
-      const queueLease = { p_request_id: job.request_id, p_lease_token: job.lease_token };
+      const queueLease = source === "message"
+        ? { p_message_id: job.message_id, p_lease_token: job.lease_token }
+        : { p_request_id: job.request_id, p_lease_token: job.lease_token };
+      const settle = source === "message" ? "settle_message_moderation_job" : "settle_moderation_intake";
+      const release = source === "message" ? "release_message_moderation_job" : "release_moderation_intake";
       let moderationLease: Record<string, unknown> | undefined;
       try {
         const input: ModerationInput = job.input;
@@ -52,13 +62,13 @@ Deno.serve(async req => {
             decision = verdict.decision;
           } else throw new ModerationUnavailable(60);
         }
-        if (await call("settle_moderation_intake", { ...queueLease, p_decision: decision, p_policy_version: policy }) !== true) throw new ModerationUnavailable();
+        if (await call(settle, { ...queueLease, p_decision: decision, p_policy_version: policy }) !== true) throw new ModerationUnavailable();
         processed++;
       } catch (cause) {
         logFailure(rid, "moderation_queue", cause);
         const retry = Math.max(60, cause instanceof ModerationUnavailable ? cause.retryAfter : 60);
         if (moderationLease) await call("release_moderation", { ...moderationLease, p_retry_after: retry });
-        await call("release_moderation_intake", { ...queueLease, p_retry_after: retry });
+        await call(release, { ...queueLease, p_retry_after: retry });
         return json({ processed, deferred: true }, 202);
       }
     }

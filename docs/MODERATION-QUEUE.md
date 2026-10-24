@@ -1,19 +1,33 @@
-# Antrean moderasi tanpa menunggu AI
+# Antrean moderasi dan publikasi Instagram
 
-Pengiriman yang lolos validasi dan filter lokal langsung disimpan privat dan mendapat respons 202 pending_moderation beserta tracking code. Intake tidak memanggil AI, sehingga kuota/model sedang gagal tidak menolak kiriman. Respons tetap menunggu penyimpanan database berhasil; tidak menampilkan sukses palsu jika database gagal atau kapasitas antrean penuh.
+## Kontrak
 
-Worker process-moderation-queue memakai secret server, lease, kuota atomik dan policy yang sama. Hanya hasil allow yang membuat messages dan publication job secara atomik. Reject/uncertain diblokir; gangguan provider dijadwalkan ulang tanpa menghilangkan kiriman. Teks antrean dihapus setelah allow/blocked; fingerprint/tombstone dan status tetap privat. Receipt retry berlaku 24 jam sejak penerimaan, bukan sejak AI selesai.
+Submit baru lolos validasi, consent, dan filter lokal; transaksi direct menyimpan pesan, receipt, satu publication job, dan satu tugas `message_moderation_jobs`. Pesan terlihat di website sebelum AI selesai. `queued` berarti antrean Instagram, bukan konfirmasi terbit. Jika transaksi/kapasitas antrean gagal, respons tidak boleh sukses dan draf dipertahankan.
 
-Antrean privat maksimal 10.000 kiriman pending untuk membatasi penyimpanan saat spam/provider mati. Tidak ada klaim kapasitas tanpa batas atau angka pesan/menit yang belum diuji. Kuota AI tetap menentukan laju pengosongan antrean. Pesan pending tidak masuk feed/detail atau Instagram.
+Worker `process-moderation-queue` memproses maksimal tiga kandidat per invocation, bergantian antara tugas pesan existing dan `moderation_intake` privat lama. Kedua sumber memakai policy, quota request/token, fingerprint, cached decision, dan lease yang sama. Tugas existing tidak menginsert pesan atau publication job kedua.
 
-Production memerlukan seluruh migration moderasi terbaru, fungsi submit/track terbaru, `process-moderation-queue`, `GROQ_API_KEY`, `MODERATION_MODEL`, `MODERATION_POLICY_REVISION`, kuota `MODERATION_*`, dan `MODERATION_WORKER_SECRET` melalui Supabase secrets. Jalankan worker melalui scheduler sekali per menit dengan `Authorization: Bearer <MODERATION_WORKER_SECRET>`; maksimal tiga kandidat per invocation. Jalankan evaluasi tiga putaran dan verifikasi policy hash sebelum mengaktifkan gate. Jangan memasukkan secret ke migration/cron SQL yang di-commit. Target production belum dinyatakan siap sampai deployment, scheduler, dan smoke test diverifikasi.
+- `allow`: Instagram eligible hanya jika policy aktif/fingerprint cocok dan gate operator terbuka.
+- `reject`, `uncertain`, atau gagal pemeriksaan lokal ulang: website disembunyikan dan Instagram diblokir.
+- Provider/kuota bermasalah: tugas ditunda; tidak mengubah gangguan menjadi approval.
+- Intake lama tetap privat sampai allow. Receipt/tombstone lama tidak dibuat ulang atau diperpanjang.
 
-Ruling: kiriman tetap harus lolos batas panjang, consent, dan filter lokal untuk pelanggaran jelas. Langsung diterima berarti tersimpan privat beserta kode pelacakan, bukan menerbitkan konten sebelum AI. Tidak mengubah gate Instagram atau meloloskan pesan ketika AI gagal.
+Visibilitas website (`web_status`, `web_published_at`), keputusan AI (`moderation_decisions`), dan delivery Instagram (`messages.status`, `published_at`, `ig_media_id`) terpisah. Pesan hidden tidak tersedia di timeline/detail/likes/leaderboard. Tidak ada jaminan konten website seluruhnya sudah diperiksa AI sebelum tampil.
 
-## Verifikasi lokal — 22 Oktober 2026
+## Deployment
 
-- 161 tes pada 13 berkas lulus, termasuk provider gagal/key AI hilang tanpa menghambat intake, antrean penuh, retry, worker allow/reject/uncertain, kuota, lease kedaluwarsa, dan pemeriksaan lokal ulang.
-- Seluruh migrasi diterapkan pada database QA kosong PostgreSQL 18 yang terisolasi; lima berkas tes SQL lulus. Pengujian meliputi privasi, receipt 24 jam tanpa perpanjangan setelah approval, replay, stale lease, satu publication job, policy gate, dan konflik request versi lama. pg_cron tidak tersedia di QA ini; baris instalasi scheduler dikecualikan hanya dari input QA, bukan source migrasi.
-- Lint, build, Deno check ketiga handler yang berubah, dan git diff --check lulus.
-- Browser 360/1440 px dengan transport uji: loading/disabled, penolakan lokal, kegagalan penyimpanan, draf/retry, receipt pending, tidak mengklaim Instagram terbit, tanpa overflow/runtime error. Tidak melakukan unggahan Instagram nyata atau uji kapasitas produksi.
-- Belum commit/push/deploy. Target Supabase PostgreSQL 17, secret worker, scheduler, dan alur produksi tetap perlu diverifikasi setelah akses deployment tersedia.
+1. Jeda publisher dan scheduler publikasi; tunggu invocation lama selesai. Catat job ambigu untuk rekonsiliasi, jangan reset lease hidup.
+2. Terapkan seluruh migrasi termasuk perbaikan dual-pipeline pada DB pengujian PostgreSQL 17 terlebih dahulu. Jangan edit migrasi lama atau reset DB berisi data nyata.
+3. Pasang konfigurasi AI, secret worker dan credential renderer/Meta melalui secret manager. Hitung `active_policy` dari konfigurasi runtime yang sama; jangan gunakan marker policy lokal sebagai hash AI.
+4. Deploy worker moderasi, publisher, submit/tracking, dan frontend yang kompatibel.
+5. Konfigurasikan scheduler menurut [K06-PUBLICATION.md](K06-PUBLICATION.md). Periksa hasil eksekusi nyata, bukan hanya keberadaan cron job.
+6. Backfill melalui `enqueue_message_moderation_backfill(100)` dalam batch kecil. Backfill berulang tidak mereset verdict, lease, receipt, job terminal, atau job ambigu. Tidak otomatis mengaktifkan legacy job AI dengan `eligible_at IS NULL`. Untuk policy berubah, DB owner dapat memanggil `requeue_message_moderation(message_id,active_policy)` secara selektif; RPC menolak lease aktif, job ambigu/terminal/confirmed, dan tidak membuka kembali visibilitas pesan hidden. Jangan reset semua verdict lewat SQL massal.
+7. Uji allow/reject/uncertain/provider gagal, policy berubah, replay, expiry, dan concurrency. Evaluasi kualitas AI tetap diperlukan sebelum pemakaian data siswa.
+8. Uji satu publikasi sintetis berizin pada akun uji. Buktikan media ID/permalink sebelum membuka antrean lain.
+
+Rollback menutup gate dan scheduler Instagram tanpa menghapus data/antrean atau melepas AI gate. Pengiriman ke Groq melibatkan provider eksternal; verifikasi persetujuan, retensi, dan kelayakan pemrosesan data sebelum produksi.
+
+## Pengujian
+
+Verifikasi implementasi lokal 24 Oktober 2026: 222 tes JavaScript pada 16 berkas, lint, production build, renderer, serta Deno check keenam handler lulus. Seluruh migrasi dan sembilan berkas tes SQL lulus pada PostgreSQL 18 terisolasi; cron, Vault, pg_net, dan storage menggunakan stub QA. Ini bukan bukti extension/scheduler Supabase asli berjalan dan bukan uji publikasi Meta. Target PostgreSQL 17, secret, policy, token, evaluasi AI, dan smoke test produksi masih wajib diverifikasi.
+
+Tes worker mock tidak membuktikan kompatibilitas migrasi SQL. Jalankan semua migration dan `supabase/tests` pada DB terisolasi, termasuk fixture direct-local dan intake AI lama. Jangan menyatakan siap produksi sampai scheduler, token, deployment dan smoke test Instagram diverifikasi.

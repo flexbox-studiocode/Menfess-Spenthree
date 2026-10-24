@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
@@ -11,13 +11,62 @@ vi.mock("./lib/supabaseConfig.js", () => ({ readSupabaseConfig: vi.fn(() => ({ u
 const invoke = vi.fn();
 const draft = { category: "aspirasi", recipient: "OSIS Spenthree", content: "Tolong tambahkan tempat membaca di taman sekolah.", rules_accepted: true };
 const renderRoute = path => render(<MemoryRouter initialEntries={[path]} useTransitions={false}><App /></MemoryRouter>);
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 beforeEach(() => {
   sessionStorage.clear(); invoke.mockReset();
   getSupabaseClient.mockReturnValue({ functions: { invoke } });
 });
 
 describe("preserved menfess integration", () => {
+  it("polls the submitted tracking code independently from response and input edits", async () => {
+    const user = userEvent.setup();
+    invoke.mockResolvedValueOnce({ data: { status: "queued", web_status: "visible", moderation_status: "pending", delivery_status: "queued", message: "Tampil di website" }, error: null });
+    invoke.mockResolvedValue({ data: { status: "published", web_status: "hidden", moderation_status: "approved", delivery_status: "published", message: "Status diperbarui" }, error: null });
+    renderRoute("/status");
+    await user.type(screen.getByLabelText("Kode pelacakan"), "SPT-poll");
+    await user.click(screen.getByRole("button", { name: "Periksa status" }));
+    expect(await screen.findByText("Website: tampil di linimasa")).toBeInTheDocument();
+    expect(screen.getByText("Instagram: menunggu pemeriksaan dan pengiriman")).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Kode pelacakan"));
+    await user.type(screen.getByLabelText("Kode pelacakan"), "SPT-not-submitted");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(invoke.mock.calls.at(-1)[1].body).toEqual({ tracking_code: "SPT-poll" });
+    expect(await screen.findByText("Website: tidak tampil di linimasa")).toBeInTheDocument();
+    // Published IG does not end website-status refreshes.
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("SPT-poll")).toBeInTheDocument();
+  });
+  it("stops the polling interval at a terminal delivery status but keeps visibility refresh", async () => {
+    const user = userEvent.setup();
+    invoke.mockResolvedValue({ data: { status: "queued", delivery_status: "queued", web_status: "visible" }, error: null });
+    renderRoute("/status");
+    await user.type(screen.getByLabelText("Kode pelacakan"), "SPT-interval");
+    await user.click(screen.getByRole("button", { name: "Periksa status" }));
+    await screen.findByText("Website: tampil di linimasa");
+    vi.useFakeTimers();
+    // Reinstall the active interval under fake timers through a fresh status.
+    invoke.mockResolvedValue({ data: { status: "processing", delivery_status: "processing", web_status: "visible" }, error: null });
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    invoke.mockClear();
+    invoke.mockResolvedValue({ data: { status: "published", delivery_status: "published", web_status: "visible" }, error: null });
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+  it("does not infer website publication from a legacy queued receipt", async () => {
+    const user = userEvent.setup(); saveDraft(draft);
+    invoke.mockResolvedValueOnce({ data: { status: "pending_moderation", web_status: "hidden", moderation_status: "pending", delivery_status: null, tracking_code: "SPT-legacy" }, error: null });
+    renderRoute("/review");
+    expect(screen.getByText(/Publikasi Instagram menunggu pemeriksaan AI/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Kirim Menfess" }));
+    expect(await screen.findByText("Website: tidak tampil di linimasa")).toBeInTheDocument();
+    expect(screen.getByText("Instagram: belum dikirim")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Lihat menfess" })).not.toBeInTheDocument();
+  });
   it("tracks a queued receipt without discarding the response when pending status clears", async () => {
     const user = userEvent.setup(); saveDraft(draft);
     invoke.mockResolvedValueOnce({ data: { status: "queued", tracking_code: "SPT-test", message: "Diterima" }, error: null });
@@ -97,7 +146,7 @@ describe("preserved menfess integration", () => {
     await screen.findByRole("heading", { name: "Status pesan" });
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(screen.getByText("SPT-0123456789ABCDEF0123456789ABCDEF")).toBeInTheDocument();
-    expect(screen.getByText("Pesan telah diterbitkan")).toBeInTheDocument();
+    expect(screen.getByText("Instagram: telah diterbitkan")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Buka Instagram/ })).not.toBeInTheDocument();
     expect(screen.getByText("Menfess berhasil dikirim")).toBeInTheDocument();
   });

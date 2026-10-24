@@ -22,6 +22,7 @@ beforeEach(() => {
     input: { category: "aspirasi", recipient: null, content: "Tolong tambah buku di perpustakaan." } };
   let claimed = false;
   rpc = vi.fn(async name => {
+    if (name === "claim_message_moderation_jobs") return { data: [] };
     if (name === "claim_moderation_intake") { const result = claimed ? [] : [job]; claimed = true; return { data: result }; }
     if (name === "reserve_moderation") return { data: { kind: "acquired", lease_token: "moderation-lease" } };
     return { data: true };

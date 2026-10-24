@@ -1,8 +1,8 @@
 # Menfess Spenthree
 
-Alur kirim terbaru: pesan yang lolos validasi dan filter lokal langsung disimpan privat dan mendapat kode pelacakan, tanpa menunggu AI. Pemeriksaan dan publikasi berlangsung melalui worker terpisah. Lihat [antrean moderasi](docs/MODERATION-QUEUE.md) untuk perilaku, batas kapasitas, serta langkah deployment. Catatan fondasi di bawah merekam tahap awal proyek.
+Alur kirim terbaru: pesan yang lolos validasi dan filter lokal tampil di website serta mendapat kode pelacakan, tanpa menunggu AI. Pesan, receipt, dan tugas AI/Instagram disimpan atomik. Instagram tetap wajib menunggu AI allow dengan policy/fingerprint cocok; AI reject/uncertain menyembunyikan pesan website. Tampil di website bukan bukti terbit di Instagram. Lihat [antrean moderasi](docs/MODERATION-QUEUE.md) untuk perilaku, batas kapasitas, serta langkah deployment. Catatan fondasi di bawah merekam tahap awal proyek.
 
-Aplikasi saat ini menggunakan React + Vite (JavaScript), React Router, CSS Modules, Lucide React, Supabase PostgreSQL 17. Tanpa login pengguna atau panel admin/moderator. Intake, tracking, antrean moderasi AI, feed/detail published-only, renderer, dan worker publikasi sudah terdokumentasi/diimplementasikan pada branch ini; publikasi Instagram produksi tetap nonaktif sampai prasyarat rilis pada [AI moderation](docs/AI-MODERATION.md) dan [K-06 publication](docs/K06-PUBLICATION.md) terpenuhi.
+Aplikasi saat ini menggunakan React + Vite (JavaScript), React Router, CSS Modules, Lucide React, Supabase PostgreSQL 17. Tanpa login pengguna atau panel admin/moderator. Intake, tracking, antrean moderasi AI, feed/detail berdasarkan visibilitas website, renderer, dan worker publikasi sudah terdokumentasi/diimplementasikan pada branch ini; publikasi Instagram produksi tetap nonaktif sampai prasyarat rilis pada [AI moderation](docs/AI-MODERATION.md) dan [K-06 publication](docs/K06-PUBLICATION.md) terpenuhi.
 
 ## Persiapan
 
@@ -84,7 +84,7 @@ Database-only cukup untuk tes SQL, bukan pengujian browser/Data API. Tidak perlu
 
 ## Batas tahap ini
 
-Backend nantinya memakai secret server untuk akses service_role ke tiga tabel internal. Browser hanya memanggil Edge Functions yang tervalidasi; tidak diberi SELECT/INSERT/UPDATE/DELETE internal. RLS dan grants ditulis eksplisit dalam migration. Feed/detail memakai proyeksi published-only. Tidak ada secret tracking/enkripsi yang ditanam dalam SQL atau frontend.
+Backend nantinya memakai secret server untuk akses service_role ke tiga tabel internal. Browser hanya memanggil Edge Functions yang tervalidasi; tidak diberi SELECT/INSERT/UPDATE/DELETE internal. RLS dan grants ditulis eksplisit dalam migration. Feed/detail memakai proyeksi web_status visible, terpisah dari status Instagram. Tidak ada secret tracking/enkripsi yang ditanam dalam SQL atau frontend.
 
 Verifikasi production yang tersisa mencakup kelayakan akun Meta/Instagram, evaluasi moderasi tiga putaran, konfigurasi policy hash, deployment secrets/scheduler, smoke test, dan rekonsiliasi satu test publication. Jangan menyatakan publikasi Instagram siap sebelum seluruh gate pada dokumen deployment dan publication lulus.
 

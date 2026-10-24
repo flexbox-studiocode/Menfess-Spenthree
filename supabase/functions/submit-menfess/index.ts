@@ -62,7 +62,35 @@ Deno.serve(async (req) => {
       const bytes = typeof encoded === "string" ? Uint8Array.from((encoded.replace(/^\\x/, "").match(/.{1,2}/g) ?? []).map(part => parseInt(part, 16))) : new Uint8Array(encoded as number[]);
       const receipt = JSON.parse(await decrypt(receiptSecret!, bytes, `${request_id}:${data.encryption_key_version}`));
       if (typeof receipt.tracking_code !== "string" || !["queued", "pending_moderation"].includes(receipt.status)) throw new Error("Invalid receipt");
-      return json({ accepted: true, tracking_code: receipt.tracking_code, status: receipt.status, message: "Pesan berhasil disimpan dan diterbitkan ke linimasa. Simpan kode pelacakanmu." }, 200, cors);
+      stage = "receipt_status";
+      const current = await db.from("messages").select("id,status,web_status,web_published_at,safety_content_hash").eq("request_id", request_id).maybeSingle();
+      if (current.error) throw new ModerationUnavailable();
+      // A legacy private intake receipt is not proof of website publication.
+      if (!current.data) {
+        const legacy = await db.rpc("track_moderation_intake", { p_tracking_code_hash: `v1:${await hmac(trackingSecret!, receipt.tracking_code)}` });
+        if (legacy.error) throw new ModerationUnavailable();
+        const intake = Array.isArray(legacy.data) ? legacy.data[0] : legacy.data;
+        const blocked = intake?.status === "blocked";
+        return json({ accepted: true, tracking_code: receipt.tracking_code, status: intake?.status || receipt.status,
+          web_status: "hidden", moderation_status: blocked ? "blocked" : "pending", delivery_status: null,
+          message: blocked ? "Pesan tersimpan tetapi tidak dapat diterbitkan. Simpan kode pelacakanmu." : "Pesan tersimpan dan menunggu pemeriksaan. Belum terkonfirmasi tampil di website atau Instagram. Simpan kode pelacakanmu." }, 200, cors);
+      }
+      const [decision, job, policy] = await Promise.all([
+        db.from("moderation_decisions").select("state,policy_version,content_hash,payload_hash").eq("request_id", request_id).maybeSingle(),
+        db.from("message_moderation_jobs").select("state,payload_hash").eq("message_id", current.data.id).maybeSingle(),
+        db.from("moderation_control").select("active_policy").eq("singleton", true).maybeSingle(),
+      ]);
+      if (decision.error || job.error || policy.error) throw new ModerationUnavailable();
+      const currentDecision = policy.data?.active_policy && decision.data?.policy_version === policy.data.active_policy
+        && decision.data?.content_hash === current.data.safety_content_hash
+        && (!job.data?.payload_hash || decision.data?.payload_hash === job.data.payload_hash);
+      const moderation = job.data?.state === "blocked" || (currentDecision && ["reject", "uncertain"].includes(decision.data?.state)) ? "blocked"
+        : currentDecision && decision.data?.state === "allow" && (!job.data || job.data.state === "approved") ? "approved" : "pending";
+      const visible = current.data.web_status === "visible";
+      return json({ accepted: true, tracking_code: receipt.tracking_code, status: current.data.status,
+        web_status: current.data.web_status, web_published_at: visible ? current.data.web_published_at : null,
+        moderation_status: moderation, delivery_status: current.data.status,
+        message: visible ? (current.data.status === "published" ? "Pesan tampil di website dan telah diterbitkan ke Instagram. Simpan kode pelacakanmu." : "Pesan berhasil disimpan dan tampil di website. Publikasi Instagram menunggu pemeriksaan AI dan proses pengiriman. Simpan kode pelacakanmu.") : "Pesan tersimpan tetapi tidak tampil di website. Simpan kode pelacakanmu." }, 200, cors);
     };
     if (existing.kind === "replay") return await reply({ ...existing, receipt_payload_hash: existing.payload_hash });
     if (existing.kind !== "missing") throw new ModerationUnavailable();

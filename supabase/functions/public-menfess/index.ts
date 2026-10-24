@@ -14,6 +14,6 @@ Deno.serve(async (req) => {
     stage = "query_detail"; const db = createClient(url, serviceKey); const { data, error: dbError } = await db.from("timeline_messages").select(columns).eq("public_id", params.get("id")).maybeSingle();
     if (dbError) throw dbError; if (!data) return fail("NOT_FOUND", 404);
     const voterId = req.headers.get("x-voter-id"); if (voterId && !uuid.test(voterId)) return fail("VALIDATION_ERROR", 400);
-    const [enriched] = await addLikeSummary(db, [data], voterId); return json({ data: enriched }, 200, cors);
+    const [enriched] = await addLikeSummary(db, [data], voterId); return json({ data: { ...enriched, web_status: "visible", delivery_status: data.status } }, 200, cors);
   } catch (cause) { logFailure(rid, stage, cause); return fail("INTERNAL_ERROR", 500); }
 });
